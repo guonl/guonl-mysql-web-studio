@@ -15,7 +15,7 @@ const HistoryPanelComp = SIDE_TAB_DEFS[1].Comp
 import {
   IconDb, IconSchema, IconTable, IconView, IconCaret, IconSearch, IconPlus,
   IconCopy, IconDownload, IconKey, IconRefresh, IconWrench, IconDoc, IconHistory, IconPlay, IconTrash, IconEdit, IconPlug,
-  IconChevronDown, IconChevronUp,
+  IconChevronDown, IconChevronUp, IconChevronLeft, IconChevronRight,
 } from './icons'
 
 /* 展开状态 key 前缀 */
@@ -62,8 +62,8 @@ export function Sidebar() {
   const runtime = useStore((s) => s.runtime)
   const meta = useStore((s) => s.meta)
   const activeTabId = useStore((s) => s.activeTabId)
-  const activeTab = useStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const sidePanelCollapsed = useStore((s) => s.prefs.sidePanelCollapsed)
+  const sidebarCollapsed = useStore((s) => s.prefs.sidebarCollapsed)
 
   const [filter, setFilter] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -83,7 +83,7 @@ export function Sidebar() {
         .then(() => {
           setExpanded((p) => new Set(p).add(K_CONN(c.id)))
           if (c.database) {
-            setExpanded((p) => new Set(p).add(K_SCHEMA(c.id, c.database!)))
+            setExpanded((p) => onlySchema(p, c.id, c.database!))
             void loadTables(c, c.database!)
           }
         })
@@ -92,7 +92,23 @@ export function Sidebar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  /* 过滤时后台补全各 schema 的表清单 */
+  /* 手风琴：只保留指定连接下目标 schema 的展开状态（其他 schema 收起） */
+  const onlySchema = (p: Set<string>, connId: string, schema: string): Set<string> => {
+    const q = new Set(p)
+    const prefix = `s:${connId}:`
+    Array.from(q).filter((k) => k.startsWith(prefix) && k !== K_SCHEMA(connId, schema)).forEach((k) => q.delete(k))
+    q.add(K_SCHEMA(connId, schema))
+    return q
+  }
+  /* 取某连接当前打开（展开/高亮）的 schema，作为表过滤的作用域 */
+  const openedOf = (connId: string): string | null => {
+    const prefix = `s:${connId}:`
+    let out: string | null = null
+    expanded.forEach((k) => { if (k.startsWith(prefix)) out = k.slice(prefix.length) })
+    return out
+  }
+
+  /* 过滤时后台补全当前打开 schema 的表清单（每连接至多一个，避免全库逐个请求） */
   useEffect(() => {
     if (!kw) return
     connections.forEach((cfg) => {
@@ -100,16 +116,17 @@ export function Sidebar() {
       const ad = getAdapter(cfg)
       const schemas = meta[cfg.id]?.schemas
       if (rt?.status !== 'connected' || !ad || !schemas) return
-      schemas.forEach((sc) => {
-        const key = `${cfg.id}:${sc}`
-        if (meta[cfg.id]?.tables[sc] !== undefined || filterAttempted.current.has(key)) return
-        filterAttempted.current.add(key)
-        void ad.listTables(sc)
-          .then((ts) => useStore.getState().setTables(cfg.id, sc, ts))
-          .catch(() => { filterAttempted.current.delete(key) })
-      })
+      const opened = openedOf(cfg.id)
+      if (!opened || !schemas.includes(opened)) return
+      if (meta[cfg.id]?.tables[opened] !== undefined) return
+      const key = `${cfg.id}:${opened}`
+      if (filterAttempted.current.has(key)) return
+      filterAttempted.current.add(key)
+      void ad.listTables(opened)
+        .then((ts) => useStore.getState().setTables(cfg.id, opened as string, ts))
+        .catch(() => { filterAttempted.current.delete(key) })
     })
-  }, [kw, connections, runtime, meta])
+  }, [kw, connections, runtime, meta, expanded])
 
   /* ---------------- 数据加载 ---------------- */
   async function loadTables(cfg: ConnectionConfig, schema: string) {
@@ -164,15 +181,21 @@ export function Sidebar() {
       }
     }
     if (cfg.database) {
-      setExpanded((p) => new Set(p).add(K_SCHEMA(cfg.id, cfg.database!)))
+      setExpanded((p) => onlySchema(p, cfg.id, cfg.database!))
       void loadTables(cfg, cfg.database)
     }
   }
 
-  const expandSchema = (cfg: ConnectionConfig, schema: string) => {
+  /* 打开 schema（手风琴模式）：同一连接同时只展开/高亮一个；再次点击收起 */
+  const openSchema = (cfg: ConnectionConfig, schema: string) => {
     const key = K_SCHEMA(cfg.id, schema)
-    toggle(key)
-    if (!expanded.has(key)) void loadTables(cfg, schema)
+    const wasOpen = expanded.has(key)
+    setExpanded((p) => {
+      const q = onlySchema(p, cfg.id, schema)
+      if (wasOpen) q.delete(key)
+      return q
+    })
+    if (!wasOpen) void loadTables(cfg, schema)
   }
 
   const refreshConn = async (cfg: ConnectionConfig) => {
@@ -284,25 +307,27 @@ export function Sidebar() {
       const connKey = K_CONN(cfg.id)
       const connNameMatch = !kw || cfg.name.toLowerCase().includes(kw)
 
-      /* schema 节点 */
+      /* 手风琴：同一连接只保留一个展开/高亮的 schema；表名/注释过滤仅作用于该 schema */
+      const openedSchema = openedOf(cfg.id) ?? cfg.database
       const schemaNodes: ReactNode[] = []
       let hasMatch = connNameMatch
       if (schemas) {
         schemas.forEach((sc) => {
           const tables = meta[cfg.id]?.tables[sc]
           const schemaMatch = !kw || sc.toLowerCase().includes(kw)
-          const matchTables = kw && tables
+          const isOpenSchema = sc === openedSchema
+          const matchTables = kw && isOpenSchema && tables
             ? tables.filter((t) => t.name.toLowerCase().includes(kw) || (t.comment ?? '').toLowerCase().includes(kw))
             : undefined
           if (kw && !schemaMatch && (!matchTables || !matchTables.length)) return
           hasMatch = true
 
-          const expandedNow = kw ? true : expanded.has(K_SCHEMA(cfg.id, sc))
+          const expandedNow = kw ? isOpenSchema : expanded.has(K_SCHEMA(cfg.id, sc))
           const loadingNow = loading.has(K_SCHEMA(cfg.id, sc))
 
-          /* 表节点 */
+          /* 表节点：有命中表时只展示命中项；仅 schema 名命中时展示全部表 */
           const tableNodes: ReactNode[] = []
-          const list = matchTables ?? tables
+          const list = matchTables && matchTables.length ? matchTables : (kw && !schemaMatch ? undefined : tables)
           if (list) {
             list.forEach((t) => {
               const tKey = `t:${cfg.id}:${sc}:${t.name}`
@@ -351,14 +376,15 @@ export function Sidebar() {
             <div key={K_SCHEMA(cfg.id, sc)} className="tree-node">
               <TRow
                 depth={1} caret open={expandedNow}
+                active={isOpenSchema}
                 className={sc.startsWith('information_schema') || sc === 'mysql' || sc === 'performance_schema' || sc === 'sys' ? 'sys' : ''}
                 icon={<IconSchema />}
                 label={sc}
                 right={loadingNow
                   ? <span className="spin"><IconRefresh /></span>
                   : <span className="cnt">{tables ? `${tables.length}` : ''}</span>}
-                onCaret={() => expandSchema(cfg, sc)}
-                onClick={() => expandSchema(cfg, sc)}
+                onCaret={() => openSchema(cfg, sc)}
+                onClick={() => openSchema(cfg, sc)}
                 onContextMenu={(e) => openContextMenu(e, schemaMenu(cfg, sc))}
               />
               {expandedNow && (
@@ -416,10 +442,25 @@ export function Sidebar() {
         </div>
       )
     })
-  }, [connections, runtime, meta, expanded, loading, kw, activeTab?.schema])
+  }, [connections, runtime, meta, expanded, loading, kw])
 
   return (
-    <aside className="sidebar" style={{ '--sidebar-w': `${useStore.getState().prefs.sidebarWidth}px` } as React.CSSProperties}>
+    <aside
+      className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
+      style={{ '--sidebar-w': `${useStore.getState().prefs.sidebarWidth}px` } as React.CSSProperties}
+    >
+      {sidebarCollapsed ? (
+        /* 收起态：整体缩为窄条，点击展开恢复原宽度 */
+        <button
+          className="sidebar-expand"
+          title="展开侧边栏"
+          onClick={() => useStore.getState().setPrefs({ sidebarCollapsed: false })}
+        >
+          <IconChevronRight />
+          <span className="vtext">表视图</span>
+        </button>
+      ) : (
+        <>
       <div className="sidebar-top">
         <div style={{ display: 'flex', gap: 6 }}>
           <div className="sidebar-search" style={{ flex: 1 }}>
@@ -432,10 +473,16 @@ export function Sidebar() {
           <button className="btn sm icon" title="新建连接" onClick={() => openConnModal()}>
             <IconPlus />
           </button>
+          <button
+            className="btn sm icon" title="收起侧边栏"
+            onClick={() => useStore.getState().setPrefs({ sidebarCollapsed: true })}
+          >
+            <IconChevronLeft />
+          </button>
         </div>
         {kw && (
           <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
-            过滤中：已连接的库会自动加载表清单
+            表名/注释仅匹配当前展开的 Schema；Schema 名命中仍会显示
           </div>
         )}
       </div>
@@ -470,6 +517,8 @@ export function Sidebar() {
           </div>
         )}
       </div>
+        </>
+      )}
     </aside>
   )
 }

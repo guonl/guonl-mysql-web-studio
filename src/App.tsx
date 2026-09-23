@@ -25,6 +25,15 @@ export function App() {
     root.classList.toggle('theme-dark', prefs.theme === 'dark')
   }, [prefs.theme])
 
+  /* 历史锁：兜底拦截触控板双指滑动的后退/前进（Safari 不支持 overscroll-behavior 禁用）。
+     手势触发的 popstate 会被立即推回当前地址，始终是同文档切换，页面不刷新、WS 连接不断 */
+  useEffect(() => {
+    const lock = () => history.pushState(null, '', location.href)
+    lock()
+    window.addEventListener('popstate', lock)
+    return () => window.removeEventListener('popstate', lock)
+  }, [])
+
   /* 侧栏宽度拖拽 */
   const onResizeStart = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -89,10 +98,10 @@ export function App() {
 
       {/* 主体 */}
       <div className="main">
-        <div style={{ width: prefs.sidebarWidth, flexShrink: 0, display: 'flex', minHeight: 0 }}>
+        <div style={{ width: prefs.sidebarCollapsed ? 30 : prefs.sidebarWidth, flexShrink: 0, display: 'flex', minHeight: 0 }}>
           <Sidebar />
         </div>
-        <div className="sidebar-resizer" onMouseDown={onResizeStart} />
+        {!prefs.sidebarCollapsed && <div className="sidebar-resizer" onMouseDown={onResizeStart} />}
         <Workbench />
       </div>
 

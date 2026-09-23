@@ -35,7 +35,19 @@ export class DemoAdapter implements DriverAdapter {
   }
 
   async getColumns(schema: string, table: string): Promise<ColumnMeta[]> {
-    const def = this.find(schema, table)
+    return this.colsOf(this.find(schema, table))
+  }
+
+  /** 一次性取回整 schema 全部表的列 */
+  async getSchemaColumns(schema: string): Promise<Record<string, ColumnMeta[]>> {
+    const s = DEMO_SCHEMAS.find((x) => x.name === schema)
+    if (!s) return {}
+    const out: Record<string, ColumnMeta[]> = {}
+    for (const t of s.tables) out[t.name] = this.colsOf(t)
+    return out
+  }
+
+  private colsOf(def: DemoTableDef): ColumnMeta[] {
     return def.columns.map((c) => ({
       name: c.name,
       type: c.type,

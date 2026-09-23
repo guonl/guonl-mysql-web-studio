@@ -68,6 +68,8 @@ export interface DriverAdapter {
   listSchemas(): Promise<string[]>
   listTables(schema: string): Promise<TableMeta[]>
   getColumns(schema: string, table: string): Promise<ColumnMeta[]>
+  /** 一次性取回整 schema 全部表的列（键为表名），比逐表 getColumns 高效；供自动补全预取 */
+  getSchemaColumns?(schema: string): Promise<Record<string, ColumnMeta[]>>
   getPK(schema: string, table: string): Promise<string[]>
   showCreateTable(schema: string, table: string): Promise<string>
   execute(sql: string, schema?: string): Promise<ExecResult>
@@ -131,6 +133,7 @@ export interface QueryTab {
 export interface UIPrefs {
   theme: 'dark' | 'light'
   sidebarWidth: number
+  sidebarCollapsed: boolean // 左侧表视图栏整体收起到侧边（窄条）
   resultHeight: number
   maxRows: number // 单次查询最大返回行数
   showCellJSON: boolean

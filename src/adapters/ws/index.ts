@@ -109,6 +109,30 @@ export class WsAdapter implements DriverAdapter {
     }))
   }
 
+  /** 一次性取回整 schema 全部表的列（单条 SQL），避免逐表查询造成请求风暴 */
+  async getSchemaColumns(schema: string): Promise<Record<string, ColumnMeta[]>> {
+    const r = await this.execute(
+      `SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = '${schema.replace(/'/g, "''")}'
+       ORDER BY TABLE_NAME, ORDINAL_POSITION`,
+    )
+    const out: Record<string, ColumnMeta[]> = {}
+    for (const row of r.rows) {
+      const table = String(row[0])
+      ;(out[table] ??= []).push({
+        name: String(row[1]),
+        type: String(row[2]),
+        nullable: row[3] === 'YES',
+        key: (row[4] as ColumnMeta['key']) || '',
+        defaultValue: row[5] == null ? null : String(row[5]),
+        extra: row[6] == null ? '' : String(row[6]),
+        comment: row[7] == null ? '' : String(row[7]),
+      })
+    }
+    return out
+  }
+
   async getPK(schema: string, table: string): Promise<string[]> {
     const esc = (s: string) => s.replace(/'/g, "''")
     const r = await this.execute(

@@ -92,6 +92,8 @@
 /* ============ 基础 ============ */
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
+/* 禁用触控板双指左右滑的前进/后退导航手势与下拉刷新，避免页面刷新导致连接中断 */
+html, body { overscroll-behavior: none; }
 body {
   font-family: var(--font-ui);
   font-size: 13px;
@@ -245,6 +247,20 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 }
 .sidebar-resizer:hover, .sidebar-resizer.dragging { background: var(--accent); }
 
+/* 侧栏整体收起：缩为窄条靠边，点击窄条展开恢复原宽度 */
+.sidebar.collapsed { width: 30px; min-width: 30px; max-width: 30px; }
+.sidebar.collapsed .sidebar-top,
+.sidebar.collapsed .tree,
+.sidebar.collapsed .sidebar-bottom { display: none; }
+.sidebar-expand {
+  width: 100%; height: 100%; min-height: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  padding: 0; border: none; background: transparent;
+  color: var(--text-2); cursor: pointer;
+}
+.sidebar-expand:hover { background: var(--bg-hover); color: var(--accent-text); }
+.sidebar-expand .vtext { writing-mode: vertical-lr; letter-spacing: 3px; font-size: 11px; user-select: none; }
+
 .sidebar-top { padding: 9px 10px 6px; display: flex; flex-direction: column; gap: 8px; }
 .sidebar-search { position: relative; }
 .sidebar-search .input { padding-left: 28px; height: 28px; background: var(--bg-3); }
@@ -267,7 +283,8 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
   position: relative;
 }
 .tree-row:hover { background: var(--bg-hover); }
-.tree-row.active { background: var(--bg-active); color: var(--accent-text); }
+.tree-row.active { background: var(--bg-active); color: var(--accent-text); font-weight: 600; }
+.tree-row.active .cnt { color: var(--accent-text); }
 .tree-row .caret {
   width: 14px; height: 14px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -675,6 +692,7 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 }
 @keyframes fadeIn { from { opacity: 0; } }
 .modal {
+  position: relative;
   background: var(--bg-2);
   border: 1px solid var(--border-2);
   border-radius: var(--r-lg);
@@ -702,6 +720,25 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
   flex-shrink: 0;
 }
 .modal-foot .spacer { flex: 1; }
+/* 弹窗右下角拖拽调整大小 */
+.modal-resize-handle {
+  position: absolute; right: 0; bottom: 0;
+  width: 18px; height: 18px;
+  cursor: nwse-resize;
+  touch-action: none;
+  z-index: 6;
+}
+.modal-resize-handle::after {
+  content: '';
+  position: absolute; right: 5px; bottom: 5px;
+  width: 7px; height: 7px;
+  border-right: 2px solid var(--text-3);
+  border-bottom: 2px solid var(--text-3);
+  border-bottom-right-radius: 2px;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+.modal-resize-handle:hover::after { opacity: 1; border-color: var(--accent); }
 
 /* 表单 */
 .form-grid { display: grid; grid-template-columns: 92px 1fr; gap: 10px 12px; align-items: center; }
@@ -809,6 +846,9 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .sql-viewer { border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--border-1); }
 .sql-viewer .cm-editor { max-height: 56vh; }
 .sql-viewer .cm-editor .cm-scroller { overflow: auto; }
+/* 弹窗内填充模式：跟随可调大小弹窗撑满，不换行 */
+.sql-viewer.fill, .sql-viewer.fill > div { height: 100%; }
+.sql-viewer.fill .cm-editor { max-height: none; height: 100%; }
 
 /* 导出弹窗 */
 .export-options { display: flex; flex-direction: column; gap: 10px; }

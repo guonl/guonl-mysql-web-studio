@@ -1,4 +1,4 @@
-/* 只读 SQL 查看器（DDL / INSERT 预览） */
+/* 只读 SQL 查看器（DDL / INSERT 预览）；fill 模式撑满可调大小弹窗，不换行、横向滚动 */
 import { useEffect, useRef } from 'react'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
@@ -16,7 +16,7 @@ const highlight = HighlightStyle.define([
   { tag: [tags.variableName, tags.propertyName], class: 'tok-id' },
 ])
 
-export function SqlViewer({ sql, maxHeight = 480 }: { sql: string; maxHeight?: number }) {
+export function SqlViewer({ sql, fill = false }: { sql: string; fill?: boolean }) {
   const host = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!host.current) return
@@ -26,11 +26,11 @@ export function SqlViewer({ sql, maxHeight = 480 }: { sql: string; maxHeight?: n
         sqlLang(),
         EditorState.readOnly.of(true),
         EditorView.editable.of(false),
-        EditorView.lineWrapping,
+        ...(!fill ? [EditorView.lineWrapping] : []),
         syntaxHighlighting(highlight, { fallback: true }),
         EditorView.theme({
-          '&': { height: 'auto', background: 'var(--bg-1)' },
-          '.cm-scroller': { overflow: 'auto', maxHeight: `${maxHeight}px`, padding: '4px 0', fontSize: 12.5 },
+          '&': { height: fill ? '100%' : 'auto', background: 'var(--bg-1)' },
+          '.cm-scroller': { overflow: 'auto', maxHeight: fill ? 'none' : '480px', padding: '4px 0', fontSize: 12.5 },
           '.cm-content': { padding: '6px 0', caretColor: 'transparent' },
           '.cm-line': { padding: '0 12px' },
           '.cm-gutters': { display: 'none' },
@@ -40,9 +40,9 @@ export function SqlViewer({ sql, maxHeight = 480 }: { sql: string; maxHeight?: n
     })
     const v = new EditorView({ state, parent: host.current })
     return () => { v.destroy() }
-  }, [sql, maxHeight])
+  }, [sql, fill])
   return (
-    <div className="sql-viewer">
+    <div className={`sql-viewer ${fill ? 'fill' : ''}`}>
       <div ref={host} />
     </div>
   )

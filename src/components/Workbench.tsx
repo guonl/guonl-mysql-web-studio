@@ -47,7 +47,10 @@ export function Workbench() {
     return hint
   }, [connMeta])
 
-  /* 当前标签页 schema 的列缓存懒加载（供自动补全） */
+  /* 当前标签页 schema 的列缓存预取（供自动补全）：
+     优先整库一条 SQL 拉全列（避免表多时逐表请求塞满桥接队列）；
+     依赖只到「表清单引用」，列写入不会触发本 effect 重跑 */
+  const colLoadRef = useRef<string | null>(null)
   useEffect(() => {
     const connId = tab?.connId
     const schema = tab?.schema
@@ -55,16 +58,33 @@ export function Workbench() {
     const m = useStore.getState().meta[connId]
     const tables = m?.tables[schema]
     if (!tables?.length) return
+    if (tables.every((t) => m?.columns[`${schema}.${t.name}`])) return
+    const key = `${connId}:${schema}`
+    if (colLoadRef.current === key) return
+    colLoadRef.current = key
     const cfg = useStore.getState().connections.find((c) => c.id === connId)
     const ad = cfg ? getAdapter(cfg) : undefined
     if (!ad) return
-    tables.forEach((t) => {
-      if (m?.columns[`${schema}.${t.name}`]) return
-      void ad.getColumns(schema, t.name)
-        .then((cols) => useStore.getState().setColumns(connId, schema, t.name, cols))
-        .catch(() => { /* 补全数据失败静默 */ })
-    })
-  }, [tab?.connId, tab?.schema, connMeta])
+    if (ad.getSchemaColumns) {
+      void ad.getSchemaColumns(schema)
+        .then((byTable) => {
+          for (const [t, cols] of Object.entries(byTable)) {
+            if (!useStore.getState().meta[connId]?.columns[`${schema}.${t}`]) {
+              useStore.getState().setColumns(connId, schema, t, cols)
+            }
+          }
+        })
+        .catch(() => { colLoadRef.current = null /* 失败允许重试 */ })
+    } else {
+      /* 不支持整库列查询的适配器：逐表加载，每张表最多一次 */
+      tables.forEach((t) => {
+        if (m?.columns[`${schema}.${t.name}`]) return
+        void ad.getColumns(schema, t.name)
+          .then((cols) => useStore.getState().setColumns(connId, schema, t.name, cols))
+          .catch(() => { /* 补全数据失败静默 */ })
+      })
+    }
+  }, [tab?.connId, tab?.schema, connMeta?.tables[tab?.schema ?? '']])
 
   /* ---------------- 快捷键：⌘T 新建 / ⌘S 保存 ---------------- */
   useEffect(() => {

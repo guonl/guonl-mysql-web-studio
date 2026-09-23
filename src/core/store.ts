@@ -28,6 +28,7 @@ export async function disposeAdapter(connId: string) {
 const DEFAULT_PREFS: UIPrefs = {
   theme: 'dark',
   sidebarWidth: 272,
+  sidebarCollapsed: false,
   resultHeight: Math.round(window.innerHeight * 0.45),
   maxRows: 1000,
   showCellJSON: false,

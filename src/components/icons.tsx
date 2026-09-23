@@ -52,6 +52,16 @@ export const IconChevronUp = () => (
     <path d="m3.5 10 4.5-4.5 4.5 4.5" />
   </S>
 )
+export const IconChevronLeft = () => (
+  <S style={{ width: 13, height: 13 }}>
+    <path d="M10.5 3.5 6 8l4.5 4.5" />
+  </S>
+)
+export const IconChevronRight = () => (
+  <S style={{ width: 13, height: 13 }}>
+    <path d="m3.5 3.5 4.5 4.5-4.5 4.5" />
+  </S>
+)
 export const IconSearch = () => (
   <S>
     <circle cx="7" cy="7" r="4.2" />

@@ -1,6 +1,6 @@
 /* 结果面板：结果集标签页 + 消息页 + 虚拟滚动表格（表头含字段注释）+ 结果集编辑 */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { QueryTab, ResultSet } from '../core/types'
+import type { ColumnMeta, QueryTab, ResultSet } from '../core/types'
 import { useStore } from '../core/store'
 import { ensureConnected } from '../core/connOps'
 import { buildInserts, cellLiteral, extractTableFromSql, parseCellValue, quoteIdent, quoteTable, toCsv } from '../core/sql'
@@ -11,6 +11,17 @@ import { IconCopy, IconDownload, IconEdit, IconInfo, IconSave, IconTable } from 
 
 const ROW_H = 26
 const OVERSCAN = 10
+
+/* 列宽：按表头内容估算并封顶，超长内容由单元格省略号截断（悬停 title 查看完整值） */
+function colWidth(c: ColumnMeta): number {
+  const nameW = c.name.length * 7.5 + 66 // 列名 + 类型标签 + PK 徽标 + 内边距
+  const commentW = (c.comment ?? '').length * 6.6 + 26
+  return Math.min(320, Math.max(120, Math.round(Math.max(nameW, commentW))))
+}
+
+/* 单元格展示截断：JSON/TEXT 等长内容只展示前 N 字符，避免撑宽整表（悬停 title 查看完整值） */
+const CELL_MAX = 100
+const clipCell = (s: string): string => (s.length > CELL_MAX ? s.slice(0, CELL_MAX) + '…' : s)
 
 /* ---------------- 结果面板入口 ---------------- */
 export function ResultsPanel({ tab }: { tab?: QueryTab }) {
@@ -417,7 +428,7 @@ function ResultGrid({ rs, editing, edits, pkSet, locked, onCellEdit }: {
           <tr>
             <th className="rownum-h" style={{ width: 52, minWidth: 52 }}>#</th>
             {rs.columns.map((c, i) => (
-              <th key={i} onContextMenu={(e) => openContextMenu(e, [
+              <th key={i} style={{ width: colWidth(c) }} onContextMenu={(e) => openContextMenu(e, [
                 { label: `复制列名 ${c.name}`, icon: <IconCopy />, onClick: () => { void copyText(c.name).then((ok) => ok && toast.success('已复制')) } },
                 { label: '复制列注释', icon: <IconCopy />, disabled: !c.comment, onClick: () => { void copyText(c.comment ?? '').then((ok) => ok && toast.success('已复制')) } },
               ])}
@@ -482,7 +493,7 @@ function ResultGrid({ rs, editing, edits, pkSet, locked, onCellEdit }: {
                           onCommit={(t) => { setCellEdit(null); onCellEdit(ri, ci, t) }}
                           onCancel={() => setCellEdit(null)}
                         />
-                      ) : display}
+                      ) : clipCell(display)}
                     </td>
                   )
                 })}
