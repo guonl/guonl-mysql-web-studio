@@ -1,0 +1,41 @@
+{
+  "name": "mysql-web-studio",
+  "private": true,
+  "version": "1.0.0",
+  "description": "纯前端 MySQL 客户端（MySQL Web Studio）",
+  "author": "guonl",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/guonl/guonl-mysql-web-studio.git"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "bridge": "node scripts/bridge-server.mjs",
+    "build:ext": "npm run build && node scripts/build-ext.mjs"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.18.6",
+    "@codemirror/commands": "^6.8.0",
+    "@codemirror/lang-sql": "^6.2.1",
+    "@codemirror/language": "^6.10.8",
+    "@codemirror/search": "^6.5.10",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.36.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "mysql2": "^3.24.4",
+    "typescript": "~5.6.3",
+    "vite": "^5.4.11",
+    "ws": "^8.21.3"
+  }
+}
