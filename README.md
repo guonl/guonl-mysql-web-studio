@@ -2,20 +2,23 @@
 
 纯前端的 MySQL 客户端 —— 在浏览器中管理连接、浏览库表、执行 SQL、导出数据，体验对标桌面客户端（如 Navicat / DataGrip 的核心常用功能）。支持 **Web 方式** 直接使用，也可 **打包为 Chrome 插件（MV3）** 安装到浏览器。
 
+**内置演示库**：项目自带一个完全离线的示例服务器（3 个 Schema、11 张表 + 2 个视图，纯前端迷你 SQL 引擎模拟），克隆下来打开页面即可体验，无需任何 MySQL 环境。
+
 > **一句话理解**：界面是纯前端 SPA；因为浏览器安全模型不允许网页直连 TCP，本项目在 Vite dev server 中内嵌了一个 **WebSocket 桥接器**（基于 `mysql2`），由它代理浏览器与 MySQL 之间的通信。整个方案只需一条命令启动，无需独立后端服务。
 
 ## 功能特性
 
 - **连接管理**：支持添加多个 MySQL 连接，自定义命名；密码可选「记住」；桥接地址零配置（留空自动使用内置桥接器）
-- **库表浏览**：连接 → Schema → 表/视图 三级树；支持按表名过滤；右键菜单（复制名称、查看 DDL、最近记录、前 100 行、导出等）
-- **SQL 编辑与执行**：CodeMirror 6 编辑器，SQL 语法高亮与补全；多查询标签页；支持只运行选中语句；一键格式化
-- **结果展示**：结果表头显示字段名、类型、主键徽标与 **COMMENT 描述**；行数与耗时固定底部；结果页签可单独关闭或一键清空；消息页签汇总每次执行状态
+- **库表浏览**：连接 → Schema → 表/视图 三级树；行数与表注释一目了然；右键菜单（复制名称、查看 DDL、最近记录、前 100 行、导出等）
+- **Schema 手风琴交互**：同一连接同时只展开/高亮一个 Schema（当前项加粗高亮，其余自动折叠），**表名/注释过滤只作用于当前展开的 Schema**——多库同名表不会被一并带出
+- **SQL 编辑与执行**：CodeMirror 6 编辑器，SQL 语法高亮与补全（含字段 COMMENT 提示）；多查询标签页；支持只运行选中语句；一键格式化
+- **结果展示**：表头显示字段名、类型、主键徽标与 **COMMENT 描述**；长字段（JSON/TEXT）自动截断为前 100 字符，悬停查看完整值、双击复制完整值，不再被超宽字段撑坏表格；行数与耗时固定底部；结果页签可单独关闭或一键清空；消息页签汇总每次执行状态
 - **SQL 脚本**：保存 / 更新 / 重命名脚本（localStorage 本地持久化），随时从左下角「脚本」面板打开
 - **执行历史**：自动记录最近执行的 SQL，可回填重跑
 - **导出**：
   - 表右键「导出 SQL」：可选 DDL / 数据 INSERT，支持 `DROP TABLE`、`IF NOT EXISTS`、`INSERT IGNORE`，可「SQL预览」（语法高亮 + 复制/下载）或直接「下载 SQL」
   - 表数据 / 查询结果导出 CSV
-- **界面**：暗 / 亮主题；左侧「脚本 / 历史」面板可收起；结果区高度可拖拽调整；弹窗统一交互
+- **界面体验**：暗 / 亮主题；侧边栏可**整体收起为窄条**（点击还原原宽度）；DDL/SQL 弹窗支持**拖拽调整大小**；结果区高度可拖拽；已禁用触控板双指左右滑的前进/后退手势，避免误触导航导致连接中断
 - **双形态**：Web 模式开箱即用；`npm run build:ext` 可打包为 Chrome 插件（MV3），数据存 `chrome.storage.local`
 
 ## 产品截图
@@ -42,9 +45,27 @@ npm install
 npm run dev
 ```
 
-打开终端提示的地址（默认 <http://localhost:5173>），点击左上角「+ 新建连接」，填入 MySQL 主机、端口、用户名、密码即可。
+打开终端提示的地址（默认 <http://localhost:5188>），点击左上角「+ 新建连接」，填入 MySQL 主机、端口、用户名、密码即可。
 
 桥接器已内嵌在 dev server 中，随 `npm run dev` 自动启动，**无需额外配置**。
+
+#### 常驻后台运行（dev.sh）
+
+不想占着一个前台终端？项目根目录提供 [dev.sh](dev.sh) 服务控制脚本：
+
+```bash
+chmod +x dev.sh       # 首次使用加执行权限
+
+./dev.sh start        # 后台启动（日志写入 dev.log，启动后自动健康检查）
+./dev.sh status       # 查看运行状态（进程 / 端口 / HTTP 响应）
+./dev.sh log          # 实时查看日志
+./dev.sh restart      # 重启
+./dev.sh stop         # 停止
+
+# 直接前台调试仍用 npm run dev
+```
+
+> 脚本内部使用 `nohup ... < /dev/null &` 启动，规避了裸 `&` 后台运行时 Vite 读终端 stdin 被内核 SIGTTIN 挂起、服务"看似启动成功却无法访问"的坑。
 
 ### Chrome 插件方式
 
@@ -85,6 +106,7 @@ flowchart LR
 | --- | --- |
 | [使用手册](docs/usage.md) | 连接管理、库表浏览、SQL 执行、脚本与历史、导出、快捷键、FAQ |
 | [架构说明](docs/architecture.md) | 桥接器原理、WS JSON 协议、前端结构、二次开发指南 |
+| [项目推广文章](docs/articles/why-i-built-mysql-web-studio.md) | 为什么要造这个轮子、产品定位与使用心得 |
 
 ## 安全提示（重要）
 
@@ -108,6 +130,7 @@ flowchart LR
 ## 目录结构
 
 ```
+├── dev.sh                             # 服务控制脚本（start / stop / restart / status / log）
 ├── bridge/
 │   └── bridge-core.mjs                # 桥接器共用核心（WS 会话、mysql2、COMMENT 补全）
 ├── plugins/
@@ -119,7 +142,9 @@ flowchart LR
 │   ├── manifest.json                  # Chrome MV3 清单（storage 权限）
 │   └── sw.js                          # Service Worker（图标点击打开主界面）
 ├── src/
-│   ├── adapters/ws/                   # 浏览器端 WS JSON 协议客户端与适配器
+│   ├── adapters/
+│   │   ├── demo/                      # 内置演示库（离线迷你 SQL 引擎 + 示例数据）
+│   │   └── ws/                        # 浏览器端 WS JSON 协议客户端与适配器
 │   ├── components/                    # UI 组件（侧栏、工作台、弹窗、结果面板等）
 │   ├── core/
 │   │   ├── store.ts                   # Zustand 全局状态 + 本地持久化
@@ -129,7 +154,9 @@ flowchart LR
 │   └── styles/global.css              # 全局样式（深 / 亮主题）
 ├── docs/
 │   ├── usage.md                       # 使用手册
-│   └── architecture.md                # 架构说明
+│   ├── architecture.md                # 架构说明
+│   ├── articles/                      # 推广文章
+│   └── images/                        # 产品截图
 └── vite.config.mts
 ```
 
