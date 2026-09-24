@@ -239,7 +239,7 @@ export function Sidebar() {
   }
 
   const openTopRows = (cfg: ConnectionConfig, schema: string, table: string, limit: number) => {
-    const sql = `SELECT * FROM ${quoteTable(schema, table)}\nLIMIT ${limit}`
+    const sql = `SELECT * FROM ${quoteTable(schema, table)}\nLIMIT ${limit};`
     const id = openQueryTab({ title: `${table} · 前 ${limit} 行`, sql, connId: cfg.id, schema })
     void runTabSql(id)
   }

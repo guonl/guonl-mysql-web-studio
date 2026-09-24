@@ -120,7 +120,7 @@ export function Workbench() {
     const doc = editorRef.current?.getDoc() ?? tab.sql
     if (!doc.trim()) return
     useStore.getState().setTabSql(tab.id, formatSql(doc))
-    toast.success('SQL 已格式化')
+    toast.success('SQL 已美化')
   }
 
   const onConnChange = (v: string) => {
@@ -257,7 +257,7 @@ export function Workbench() {
         <button className="btn sm" onClick={() => setSaveOpen(true)} title="保存为脚本 (⌘/Ctrl+S)">
           <IconSave /> {tab.savedScriptName ? (tab.dirty ? '更新脚本 ●' : '已保存') : '保存脚本'}
         </button>
-        <button className="btn sm" onClick={doFormat} title="格式化 SQL"><IconWrench /> 格式化</button>
+        <button className="btn sm" onClick={doFormat} title="美化 SQL（按分号拆分多条语句逐条格式化）"><IconWrench /> 美化</button>
         <button
           className="btn sm" disabled={!tab.sql.trim()}
           onClick={() => { void copyText(tab.sql).then((ok) => ok && toast.success('已复制 SQL')) }}

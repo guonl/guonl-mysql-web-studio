@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ColumnMeta, QueryTab, ResultSet } from '../core/types'
 import { useStore } from '../core/store'
 import { ensureConnected } from '../core/connOps'
-import { buildInserts, cellLiteral, extractTableFromSql, parseCellValue, quoteIdent, quoteTable, toCsv } from '../core/sql'
+import { buildInserts, buildUpdates, cellLiteral, extractTableFromSql, parseCellValue, quoteIdent, quoteTable, toCsv } from '../core/sql'
 import { copyText, downloadText, fmtDuration, fmtNum, fmtTime, isNumLike, valueToText } from '../core/utils'
 import { openContextMenu, type CtxItem } from './ContextMenu'
 import { toast } from './Toast'
@@ -22,6 +22,35 @@ function colWidth(c: ColumnMeta): number {
 /* 单元格展示截断：JSON/TEXT 等长内容只展示前 N 字符，避免撑宽整表（悬停 title 查看完整值） */
 const CELL_MAX = 100
 const clipCell = (s: string): string => (s.length > CELL_MAX ? s.slice(0, CELL_MAX) + '…' : s)
+
+/* ---------------- 结果集复制 / 导出（工具条与页签右键菜单共用） ---------------- */
+
+/** 从 SQL 粗解析目标表名（生成 INSERT 用），解析失败返回 undefined */
+function resultTable(rs: ResultSet): string | undefined {
+  const m = extractTableFromSql(rs.sql)
+  return m ? quoteTable(rs.schema ?? m.schema, m.table) : undefined
+}
+
+function copyResultCsv(rs: ResultSet) {
+  void copyText(toCsv(rs.columns, rs.rows))
+    .then((ok) => ok ? toast.success(`已复制 ${rs.rows.length} 行 CSV`) : toast.error('复制失败'))
+}
+
+function copyResultInsert(rs: ResultSet) {
+  const t = resultTable(rs) ?? '`result`'
+  void copyText(buildInserts(t, rs.columns, rs.rows)).then((ok) => ok ? toast.success('已复制 INSERT 语句') : toast.error('复制失败'))
+}
+
+function downloadResultCsv(rs: ResultSet) {
+  downloadText(`result_${new Date(rs.at).toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`, toCsv(rs.columns, rs.rows), 'text/csv;charset=utf-8')
+  toast.success('已下载 CSV')
+}
+
+function downloadResultInsert(rs: ResultSet) {
+  const t = resultTable(rs) ?? '`result`'
+  downloadText(`insert_${Date.now()}.sql`, buildInserts(t, rs.columns, rs.rows), 'application/sql')
+  toast.success('已下载 INSERT 脚本')
+}
 
 /* ---------------- 结果面板入口 ---------------- */
 export function ResultsPanel({ tab }: { tab?: QueryTab }) {
@@ -49,6 +78,22 @@ export function ResultsPanel({ tab }: { tab?: QueryTab }) {
     )
   }
 
+  /* 结果页签右键菜单：整合工具条的复制/导出功能 + 页签关闭操作 */
+  const rtabMenu = (r: ResultSet): CtxItem[] => {
+    const isQuery = r.kind === 'query' && r.columns.length > 0
+    const hasTable = !!resultTable(r)
+    return [
+      { label: '复制CSV', icon: <IconCopy />, disabled: !isQuery, onClick: () => copyResultCsv(r) },
+      { label: '复制INSERT', icon: <IconCopy />, disabled: !isQuery || !hasTable, onClick: () => copyResultInsert(r) },
+      { label: '下载CSV', icon: <IconDownload />, disabled: !isQuery, onClick: () => downloadResultCsv(r) },
+      { label: '下载INSERT', icon: <IconDownload />, disabled: !isQuery || !hasTable, onClick: () => downloadResultInsert(r) },
+      { sep: true },
+      { label: '关闭', onClick: () => useStore.getState().removeResult(tab!.id, r.id) },
+      { label: '关闭其他标签页', disabled: results.length <= 1, onClick: () => useStore.getState().updateTab(tab!.id, { results: [r], activeResultId: r.id }) },
+      { label: '关闭全部', danger: true, onClick: () => useStore.getState().clearResults(tab!.id) },
+    ]
+  }
+
   return (
     <div className="results">
       <div className="results-tabs">
@@ -58,6 +103,7 @@ export function ResultsPanel({ tab }: { tab?: QueryTab }) {
             className={`rtab ${!showMsg && active?.id === r.id ? 'on' : ''}`}
             title={r.sql}
             onClick={() => { setShowMsg(false); useStore.getState().updateTab(tab!.id, { activeResultId: r.id }) }}
+            onContextMenu={(e) => openContextMenu(e, rtabMenu(r))}
           >
             <span className="t-title">{r.title}</span>
             <span className={`rtag ${r.kind === 'error' ? 'err' : 'ok'}`}>
@@ -315,36 +361,14 @@ function ResultToolbar({ rs, editable, editing, dirty, saving, onToggleEdit, onS
   onToggleEdit: () => void
   onSave: () => void
 }) {
-  const targetTable = useMemo(() => {
-    const m = extractTableFromSql(rs.sql)
-    return m ? quoteTable(rs.schema ?? m.schema, m.table) : undefined
-  }, [rs.sql, rs.schema])
-
-  const copyAsCsv = () => {
-    void copyText(toCsv(rs.columns, rs.rows))
-      .then((ok) => ok ? toast.success(`已复制 ${rs.rows.length} 行 CSV`) : toast.error('复制失败'))
-  }
-  const copyAsInsert = () => {
-    const t = targetTable ?? '`result`'
-    const sql = buildInserts(t, rs.columns, rs.rows)
-    void copyText(sql).then((ok) => ok ? toast.success('已复制 INSERT 语句') : toast.error('复制失败'))
-  }
-  const downloadCsv = () => {
-    downloadText(`result_${new Date(rs.at).toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`, toCsv(rs.columns, rs.rows), 'text/csv;charset=utf-8')
-    toast.success('已下载 CSV')
-  }
-  const downloadInsert = () => {
-    const t = targetTable ?? '`result`'
-    downloadText(`insert_${Date.now()}.sql`, buildInserts(t, rs.columns, rs.rows), 'application/sql')
-    toast.success('已下载 INSERT 脚本')
-  }
+  const targetTable = resultTable(rs)
 
   return (
     <div className="results-toolbar">
-      <button className="btn sm ghost" onClick={copyAsCsv} title="以 CSV 格式复制全部结果"><IconCopy /> 复制 CSV</button>
-      <button className="btn sm ghost" onClick={copyAsInsert} disabled={!targetTable} title={targetTable ? `生成到 ${targetTable} 的 INSERT` : '无法从 SQL 识别表名'}><IconCopy /> 复制 INSERT</button>
-      <button className="btn sm ghost" onClick={downloadCsv}><IconDownload /> CSV</button>
-      <button className="btn sm ghost" onClick={downloadInsert} disabled={!targetTable}><IconDownload /> INSERT</button>
+      <button className="btn sm ghost" onClick={() => copyResultCsv(rs)} title="以 CSV 格式复制全部结果"><IconCopy /> 复制 CSV</button>
+      <button className="btn sm ghost" onClick={() => copyResultInsert(rs)} disabled={!targetTable} title={targetTable ? `生成到 ${targetTable} 的 INSERT` : '无法从 SQL 识别表名'}><IconCopy /> 复制 INSERT</button>
+      <button className="btn sm ghost" onClick={() => downloadResultCsv(rs)}><IconDownload /> CSV</button>
+      <button className="btn sm ghost" onClick={() => downloadResultInsert(rs)} disabled={!targetTable}><IconDownload /> INSERT</button>
       {rs.truncated && <span style={{ color: 'var(--warn)', fontSize: 11, marginLeft: 6 }}>仅导出已加载的 {fmtNum(rs.rowCount)} 行</span>}
       <span className="tb-sep" />
       {editable.ok ? (
@@ -411,11 +435,30 @@ function ResultGrid({ rs, editing, edits, pkSet, locked, onCellEdit }: {
   const cellMenu = (r: number, c: number): CtxItem[] => {
     const v = rs.rows[r]?.[c]
     const col = rs.columns[c]
+    const row = rs.rows[r]
     const rowText = rs.columns.map((cc, idx) => `${cc.name}: ${valueToText(rs.rows[r]?.[idx])}`).join('\n')
+
+    /* 单行 SQL 生成：INSERT 整行直接生成；UPDATE 需要主键定位（仅可编辑结果集携带主键） */
+    const insTable = resultTable(rs)
+    let updSql: string | null = null
+    if (pkSet.size && row && rs.columns[0]) {
+      const tbl = quoteTable(rs.columns[0].schema || rs.schema, rs.columns[0].table ?? '')
+      try { updSql = buildUpdates(tbl, rs.columns, [row], Array.from(pkSet))[0] ?? null } catch { updSql = null }
+    }
+
     return [
       { label: `复制值${col ? `（${col.name}）` : ''}`, icon: <IconCopy />, disabled: v === null, onClick: () => { void copyText(valueToText(v)).then((ok) => ok && toast.success('已复制单元格值')) } },
       { label: '复制整行（key: value）', icon: <IconCopy />, onClick: () => { void copyText(rowText).then((ok) => ok && toast.success('已复制整行')) } },
       { label: '复制整行（CSV）', icon: <IconCopy />, onClick: () => { void copyText(rs.rows[r].map((x) => valueToText(x)).join(',')).then((ok) => ok && toast.success('已复制整行')) } },
+      { sep: true },
+      {
+        label: '复制为INSERT语句', icon: <IconCopy />, disabled: !insTable,
+        onClick: () => { if (!insTable) return; void copyText(buildInserts(insTable, rs.columns, [row])).then((ok) => ok && toast.success('已复制 INSERT 语句')) },
+      },
+      {
+        label: '复制为UPDATE语句', icon: <IconCopy />, disabled: !updSql,
+        onClick: () => { void copyText(updSql!).then((ok) => ok && toast.success('已复制 UPDATE 语句')) },
+      },
       { sep: true },
       { label: '复制列名', icon: <IconCopy />, onClick: () => { if (col) void copyText(col.name).then((ok) => ok && toast.success('已复制')) } },
     ]

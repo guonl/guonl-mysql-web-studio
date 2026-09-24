@@ -1,7 +1,7 @@
 /* SQL 工具：语句拆分 / 格式化 / INSERT 生成 / CSV 导出 / 表名解析 */
 
 import type { ColumnMeta } from './types'
-import { fmtDateTime } from './utils'
+import { fmtDateTime, valueToText } from './utils'
 
 /** 标识符加反引号 */
 export function quoteIdent(name: string): string {
@@ -105,12 +105,20 @@ const NEWLINE_BEFORE = new Set([
   'LEFT OUTER JOIN', 'RIGHT OUTER JOIN', 'INNER OUTER JOIN', 'CROSS JOIN', 'ON',
 ])
 
-/** 轻量 SQL 格式化：关键字大写 + 主要子句换行缩进 */
+/**
+ * 轻量 SQL 美化：按分号拆分多条语句，逐条格式化（关键字大写 + 主要子句换行缩进），
+ * 每条语句以分号结尾、语句之间空一行分隔，多语句不再揉在一起。
+ */
 export function formatSql(sql: string): string {
-  // 先去掉换行，把空白压成单空格，再按 token 处理
-  const flat = sql.replace(/\s+/g, ' ').trim()
-  if (!flat) return flat
-  const tokens = tokenize(flat)
+  const stmts = splitStatements(sql)
+  if (!stmts.length) return sql.trim()
+  return stmts.map((s) => formatStatement(s) + ';').join('\n\n')
+}
+
+/** 单条语句格式化：关键字大写 + 主要子句换行缩进 */
+function formatStatement(sql: string): string {
+  const tokens = tokenize(sql)
+  if (!tokens.length) return ''
   let out = ''
   let depth = 0
   let prev = ''
@@ -119,6 +127,16 @@ export function formatSql(sql: string): string {
     const up = tk.toUpperCase()
     const twoWord = up === 'GROUP' || up === 'ORDER' || up === 'UNION' || up === 'LEFT' || up === 'RIGHT' || up === 'INNER' || up === 'CROSS'
     const phrase = twoWord && tokens[i + 1] ? `${up} ${tokens[i + 1].toUpperCase()}` : up
+
+    /* 注释 token：独占一行，保证注释不会被吞进语句 */
+    if (up.startsWith('/*')) {
+      out = out.replace(/\s*$/, '')
+      if (out) out += '\n' + '  '.repeat(depth) + tk
+      else out += '  '.repeat(depth) + tk
+      out += '\n' + '  '.repeat(depth)
+      prev = ''
+      continue
+    }
 
     if (NEWLINE_BEFORE.has(phrase)) {
       out = out.replace(/\s*$/, '')
@@ -155,15 +173,45 @@ export function formatSql(sql: string): string {
   return out
 }
 
-/** 压平后的简单 tokenizer：字符串/标识符/括号/逗号/其他词 */
+/** SQL tokenizer：感知字符串 / 反引号标识符 / 行注释（-- #）/ 块注释，按分隔符切词 */
 function tokenize(s: string): string[] {
   const out: string[] = []
   let i = 0
-  while (i < s.length) {
+  const n = s.length
+  while (i < n) {
     const c = s[i]
+    const c2 = s[i + 1]
+    /* 空白（含换行）作为词分隔符 */
+    if (c === ' ' || c === '\n' || c === '\r' || c === '\t' || c === '\f') { i++; continue }
+    /* 行注释 -- / #：整体转成块注释 token 保留（压平/换行不会吞掉语句） */
+    if (c === '-' && c2 === '-') {
+      let j = i + 2
+      while (j < n && s[j] !== '\n') j++
+      const body = s.slice(i + 2, j).trim()
+      out.push(body ? `/* ${body} */` : '/* */')
+      i = j
+      continue
+    }
+    if (c === '#') {
+      let j = i + 1
+      while (j < n && s[j] !== '\n') j++
+      const body = s.slice(i + 1, j).trim()
+      out.push(body ? `/* ${body} */` : '/* */')
+      i = j
+      continue
+    }
+    /* 块注释整体保留 */
+    if (c === '/' && c2 === '*') {
+      let j = i + 2
+      while (j < n && !(s[j] === '*' && s[j + 1] === '/')) j++
+      const end = Math.min(j + 2, n)
+      out.push(s.slice(i, end))
+      i = end
+      continue
+    }
     if (c === "'") {
       let j = i + 1
-      while (j < s.length) {
+      while (j < n) {
         if (s[j] === '\\') j += 2
         else if (s[j] === "'") { j += (s[j + 1] === "'" ? 2 : 1); break }
         else j++
@@ -174,9 +222,9 @@ function tokenize(s: string): string[] {
     }
     if (c === '`') {
       let j = i + 1
-      while (j < s.length && s[j] !== '`') j++
-      out.push(s.slice(i, Math.min(j + 1, s.length)))
-      i = j + 1
+      while (j < n && s[j] !== '`') j++
+      out.push(s.slice(i, Math.min(j + 1, n)))
+      i = Math.min(j + 1, n)
       continue
     }
     if (c === '(' || c === ')' || c === ',') {
@@ -184,9 +232,9 @@ function tokenize(s: string): string[] {
       i++
       continue
     }
-    if (c === ' ') { i++; continue }
+    /* 普通词：读到空白 / 括号 / 逗号 / 引号为止 */
     let j = i
-    while (j < s.length && s[j] !== ' ' && s[j] !== '(' && s[j] !== ')' && s[j] !== ',' && s[j] !== "'") j++
+    while (j < n && !/[\s(),'`]/.test(s[j])) j++
     out.push(s.slice(i, j))
     i = j
   }
@@ -214,6 +262,32 @@ export function buildInserts(
     lines.push(head + '\n  ' + tuples + ';')
   }
   return lines.join('\n\n')
+}
+
+/**
+ * 由结果集行生成按主键定位的 UPDATE 语句：
+ * SET 全部非主键列，WHERE 主键定位。主键为 NULL 的行抛错（无法定位记录）。
+ */
+export function buildUpdates(
+  table: string,
+  columns: ColumnMeta[],
+  rows: unknown[][],
+  pkIdx: number[],
+): string[] {
+  const pkSet = new Set(pkIdx)
+  return rows.map((row) => {
+    const where = pkIdx.map((pi) => {
+      const pk = columns[pi]
+      const v = row[pi]
+      if (v === null || v === undefined) throw new Error(`主键「${pk.name}」为 NULL，无法定位记录`)
+      return `${quoteIdent(pk.orgName ?? pk.name)} = ${cellLiteral(pk, valueToText(v))}`
+    })
+    const sets = columns
+      .map((col, ci) => (pkSet.has(ci) ? null : `${quoteIdent(col.orgName ?? col.name)} = ${cellLiteral(col, valueToText(row[ci]))}`))
+      .filter((s): s is string => s !== null)
+    if (!sets.length) throw new Error('结果集只有主键列，没有可更新的字段')
+    return `UPDATE ${table} SET ${sets.join(', ')} WHERE ${where.join(' AND ')};`
+  })
 }
 
 /** 行/列转 CSV（带 BOM 便于 Excel 识别 UTF-8） */
@@ -246,9 +320,9 @@ export function buildTopN(
   const t = quoteTable(schema, table)
   if (pk.length) {
     const order = pk.map((c) => `${quoteIdent(c)} DESC`).join(', ')
-    return `SELECT * FROM ${t}\nORDER BY ${order}\nLIMIT ${n}`
+    return `SELECT * FROM ${t}\nORDER BY ${order}\nLIMIT ${n};`
   }
-  return `SELECT * FROM ${t}\nLIMIT ${n}`
+  return `SELECT * FROM ${t}\nLIMIT ${n};`
 }
 
 /* ---------------- 结果集单元格编辑（值文本 ↔ SQL 字面量） ---------------- */

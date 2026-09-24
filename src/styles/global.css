@@ -451,8 +451,11 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .editor-schema-select { width: auto; min-width: 130px; height: 28px; font-size: 12px; }
 .toolbar-hint { color: var(--text-3); font-size: 11px; margin-left: auto; display: flex; align-items: center; gap: 4px; }
 
-.editor-host { flex: 1; min-height: 60px; position: relative; }
-.editor-host .cm-editor { position: absolute; inset: 0; font-size: 13px; }
+.editor-host { flex: 1; min-height: 60px; position: relative; min-width: 0; }
+/* CM6 基础主题将 .cm-editor 设为 position:relative!important，absolute 定位不生效，
+   必须显式约束高度，否则行数多时编辑器内容向下溢出、盖住结果面板标题 */
+.editor-host .cm-editor { position: absolute; inset: 0; height: 100%; font-size: 13px; }
+.editor-host .cm-scroller { overflow-y: auto; }
 .cm-editor { background: var(--bg-0); }
 .cm-editor.cm-focused { outline: none !important; }
 .cm-scroller { font-family: var(--font-mono) !important; line-height: 1.55; }
