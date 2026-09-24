@@ -342,6 +342,7 @@ function ResultView({ tabId, rs }: { tabId: string; rs: ResultSet }) {
         <span className="sep" />
         <span>耗时 <b>{fmtDuration(rs.durationMs)}</b></span>
         {rs.truncated && <><span className="sep" /><span style={{ color: 'var(--warn)' }}>结果已截断（可在偏好中调大行数上限）</span></>}
+        {rs.autoLimit !== undefined && <><span className="sep" /><span style={{ color: 'var(--text-3)' }} title="原语句未写 LIMIT，执行时按右上角行数上限自动附加">已自动附加 LIMIT {rs.autoLimit}</span></>}
         {editing && <><span className="sep" /><span style={{ color: 'var(--accent-text)' }}>修改模式：双击单元格编辑值（主键列除外）</span></>}
         {edits.size > 0 && <><span className="sep" /><span style={{ color: 'var(--warn)' }}>未保存 {edits.size} 处修改</span></>}
         <span style={{ flex: 1 }} />

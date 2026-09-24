@@ -111,6 +111,14 @@ export const IconMoon = () => (
     <path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7Z" />
   </S>
 )
+export const IconPalette = () => (
+  <S>
+    <path d="M8 14.5c-3.6 0-6.5-2.9-6.5-6.5S4.4 1.5 8 1.5s6.5 2.6 6.5 6c0 1.9-1.5 2.9-2.9 2.9h-1.7c-.9 0-1.6.7-1.6 1.6 0 .4.2.8.4 1.2.2.3.4.7.4 1.1 0 .7-.6 1.7-1.1 1.7Z" />
+    <circle cx="5.2" cy="6.2" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="8" cy="4.6" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="10.9" cy="6.2" r="0.9" fill="currentColor" stroke="none" />
+  </S>
+)
 export const IconKey = () => (
   <S>
     <circle cx="5" cy="8" r="3" />

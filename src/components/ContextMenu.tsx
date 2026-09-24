@@ -14,9 +14,13 @@ export interface CtxItem {
 
 let openFn: ((x: number, y: number, items: CtxItem[]) => void) | null = null
 
-/** 在 (x,y) 打开右键菜单 */
-export function openContextMenu(e: { clientX: number; clientY: number; preventDefault(): void }, items: CtxItem[]) {
+/** 在 (x,y) 打开右键菜单（也可由 click 打开：内部会阻断冒泡，避免 window 上的 click 关闭监听把刚打开的菜单立即关掉） */
+export function openContextMenu(
+  e: { clientX: number; clientY: number; preventDefault(): void; stopPropagation?(): void },
+  items: CtxItem[],
+) {
   e.preventDefault()
+  e.stopPropagation?.()
   openFn?.(e.clientX, e.clientY, items.filter((i) => i.sep || (!i.disabled && i.label)))
 }
 

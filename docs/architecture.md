@@ -85,19 +85,19 @@ src/
 │   └── index.ts     # WsAdapter：实现统一的数据访问接口（connect/execute/showCreateTable/...）
 ├── components/      # UI 组件
 │   ├── Sidebar.tsx        # 左侧树（连接/Schema/表）+ 脚本/历史面板（可收起）
-│   ├── Workbench.tsx      # 编辑器工具条、多标签页、运行/格式化/保存
+│   ├── Workbench.tsx      # 编辑器工具条、多标签页、运行/美化/保存
 │   ├── ResultsPanel.tsx   # 结果页签（可关闭/清空）、消息页签、结果视图
 │   ├── ResultGrid.tsx     # 虚拟化结果表格
 │   ├── ModalHost.tsx      # 各类弹窗（连接、导出 SQL、右键触发的表单等）
-│   ├── Modal.tsx / SqlModal.tsx  # 弹窗骨架 / SQL 预览弹窗
+│   ├── Modal.tsx / SqlModal.tsx  # 弹窗骨架 / SQL 预览弹窗（内置弹窗栈：遮罩层级按打开顺序递增、Esc 只关栈顶，支持弹窗叠加）
 │   ├── SqlViewer.tsx      # 只读 SQL 查看器（CodeMirror + lang-sql 高亮）
-│   └── ContextMenu.tsx    # 通用右键菜单
+│   └── ContextMenu.tsx    # 通用右键菜单（右键/左键点击均可触发，支持色卡等自定义 icon）
 ├── core/
 │   ├── store.ts     # Zustand：connections/runtime/meta/tabs/scripts/history/prefs
 │   │                #   persist() 按策略写入 localStorage（如未记住密码的连接剔除密码）
-│   └── types.ts     # ConnectionConfig / QueryTab / ExecResult / ColumnMeta / UIPrefs
+│   └── types.ts     # ConnectionConfig / QueryTab / ExecResult / ColumnMeta / UIPrefs / ThemeId + THEMES 主题元数据
 ├── lib/             # 工具：SQL 格式化、buildInserts、CSV 序列化、下载等
-└── styles/global.css
+└── styles/global.css  # 全局样式：9 套主题变量组，<html data-theme> 属性选择器切换
 ```
 
 ### 关键设计
@@ -111,7 +111,10 @@ src/
 | `tabs` / `activeTabId` | 查询标签页（SQL 内容、活动 Schema、结果集，结果最多保留 12 条） |
 | `scripts` | 保存的 SQL 脚本 |
 | `history` | 执行历史 |
-| `prefs` | 主题、侧栏宽度、结果区高度、maxRows、侧栏面板收起状态等 |
+| `prefs` | 主题（`ThemeId`，9 选 1）、侧栏宽度、结果区高度、maxRows、侧栏面板收起状态等 |
+
+- **多主题机制**：主题差异收敛为每主题一套 CSS 变量组（`src/styles/global.css`），`<html data-theme="...">` 属性选择器匹配生效，`:root` 兜底默认暗色；`public/theme-boot.js` 在首帧渲染前从 localStorage 恢复主题，避免亮色用户刷新时先渲染暗色再切换的闪烁。**新增主题 = global.css 加一组变量 + `types.ts` 的 `THEMES` 注册一行**
+- **弹窗栈**：每个 Modal 挂载时入模块级栈，遮罩 `z-index` 按栈序递增（后开的上层）、`Esc` 只关闭栈顶弹窗——支撑「导出弹窗上叠加 SQL 预览，关闭后回到导出弹窗继续操作」等叠加场景
 
 ## 6. 二次开发指南
 

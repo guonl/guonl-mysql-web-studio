@@ -91,6 +91,7 @@ export interface ResultSet {
   kind: 'query' | 'notice' | 'error'
   notice?: string
   info?: string
+  autoLimit?: number // 原语句未写 LIMIT 时执行器自动附加的行数上限
 }
 
 export interface SavedScript {
@@ -130,8 +131,32 @@ export interface QueryTab {
   savedScriptName?: string
 }
 
+/* UI 主题：id 持久化在 prefs.theme（旧值 'dark'/'light' 天然兼容）；mode 为明暗归属；swatch 为菜单色卡预览（背景/强调/关键字） */
+export type ThemeId =
+  | 'dark' | 'one-dark' | 'dracula' | 'tokyo-night' | 'monokai' | 'nord'
+  | 'light' | 'github-light' | 'solarized-light'
+
+export interface ThemeMeta {
+  id: ThemeId
+  name: string
+  mode: 'dark' | 'light'
+  swatch: [string, string, string]
+}
+
+export const THEMES: ThemeMeta[] = [
+  { id: 'dark', name: '默认暗色', mode: 'dark', swatch: ['#0d1117', '#4f8cff', '#ff7ab8'] },
+  { id: 'one-dark', name: 'One Dark Pro', mode: 'dark', swatch: ['#282c34', '#61afef', '#c678dd'] },
+  { id: 'dracula', name: 'Dracula', mode: 'dark', swatch: ['#282a36', '#bd93f9', '#ff79c6'] },
+  { id: 'tokyo-night', name: 'Tokyo Night', mode: 'dark', swatch: ['#1a1b26', '#7aa2f7', '#bb9af7'] },
+  { id: 'monokai', name: 'Monokai', mode: 'dark', swatch: ['#272822', '#fd971f', '#f92672'] },
+  { id: 'nord', name: 'Nord', mode: 'dark', swatch: ['#2e3440', '#88c0d0', '#81a1c1'] },
+  { id: 'light', name: '默认亮色', mode: 'light', swatch: ['#ffffff', '#3b6edc', '#b0248a'] },
+  { id: 'github-light', name: 'GitHub Light', mode: 'light', swatch: ['#ffffff', '#0969da', '#cf222e'] },
+  { id: 'solarized-light', name: 'Solarized Light', mode: 'light', swatch: ['#fdf6e3', '#268bd2', '#859900'] },
+]
+
 export interface UIPrefs {
-  theme: 'dark' | 'light'
+  theme: ThemeId
   sidebarWidth: number
   sidebarCollapsed: boolean // 左侧表视图栏整体收起到侧边（窄条）
   resultHeight: number

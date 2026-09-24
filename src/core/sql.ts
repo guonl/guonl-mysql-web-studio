@@ -325,6 +325,39 @@ export function buildTopN(
   return `SELECT * FROM ${t}\nLIMIT ${n};`
 }
 
+/* ---------------- 查询语句 LIMIT 自动附加 ---------------- */
+
+/** 判断语句是否为查询类（以 SELECT / WITH / TABLE 开头，忽略前导注释）——仅这类语句适合自动附加 LIMIT */
+export function isQueryStatement(sql: string): boolean {
+  const first = tokenize(sql).find((t) => !t.startsWith('/*'))
+  if (!first) return false
+  const up = first.toUpperCase()
+  return up === 'SELECT' || up === 'WITH' || up === 'TABLE'
+}
+
+/** 检测语句顶层（括号深度 0）是否已有 LIMIT 子句——子查询内的 LIMIT 不算 */
+export function hasTopLevelLimit(sql: string): boolean {
+  let depth = 0
+  for (const tk of tokenize(sql)) {
+    const up = tk.toUpperCase()
+    if (up === '(') { depth++; continue }
+    if (up === ')') { depth--; continue }
+    if (depth === 0 && up === 'LIMIT') return true
+  }
+  return false
+}
+
+/** 给查询语句附加 LIMIT n：尾部若是 FOR UPDATE / FOR SHARE / LOCK IN SHARE MODE，LIMIT 需插在其前 */
+export function appendLimit(sql: string, n: number): string {
+  const s = sql.replace(/;\s*$/, '').trimEnd()
+  const tail = s.match(/\s(FOR\s+(?:UPDATE|SHARE)|LOCK\s+IN\s+SHARE\s+MODE)\s*$/i)
+  if (tail) {
+    const head = s.slice(0, s.length - tail[0].length).trimEnd()
+    return `${head}\nLIMIT ${n} ${tail[1].toUpperCase()}`
+  }
+  return `${s}\nLIMIT ${n}`
+}
+
 /* ---------------- 结果集单元格编辑（值文本 ↔ SQL 字面量） ---------------- */
 
 const NUMERIC_TYPE = /^(tinyint|smallint|mediumint|int|integer|bigint|decimal|numeric|float|double|real|year|bit)/i

@@ -5,12 +5,41 @@ import { IS_EXTENSION } from './core/storage'
 import { Sidebar } from './components/Sidebar'
 import { Workbench } from './components/Workbench'
 import { ToastHost } from './components/Toast'
-import { ContextMenuHost } from './components/ContextMenu'
+import { ContextMenuHost, openContextMenu, CtxItem } from './components/ContextMenu'
 import { ModalHost } from './components/ModalHost'
-import { IconDb, IconGithub, IconMoon, IconSun } from './components/icons'
+import { IconDb, IconGithub, IconPalette } from './components/icons'
+import { THEMES } from './core/types'
+import type { ThemeId, ThemeMeta } from './core/types'
 
 /* 源码仓库地址 */
 const REPO_URL = 'https://github.com/guonl/guonl-mysql-web-studio'
+
+/* 主题色卡（菜单 icon）：左侧大块背景色，右侧上下两小块强调色/关键字色 */
+function ThemeSwatch({ t }: { t: ThemeMeta }) {
+  return (
+    <span style={{ display: 'flex', width: 16, height: 16, borderRadius: 4, overflow: 'hidden', border: '1px solid rgba(130,140,160,0.5)', flexShrink: 0 }}>
+      <span style={{ width: 7, background: t.swatch[0] }} />
+      <span style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <span style={{ flex: 1, background: t.swatch[1] }} />
+        <span style={{ flex: 1, background: t.swatch[2] }} />
+      </span>
+    </span>
+  )
+}
+
+/* 主题选择菜单：暗色组在前、亮色组在后，当前主题标 ✓ */
+function buildThemeMenu(current: ThemeId): CtxItem[] {
+  const item = (t: ThemeMeta): CtxItem => ({
+    label: t.id === current ? `${t.name} ✓` : t.name,
+    icon: <ThemeSwatch t={t} />,
+    onClick: () => useStore.getState().setPrefs({ theme: t.id }),
+  })
+  return [
+    ...THEMES.filter((t) => t.mode === 'dark').map(item),
+    { sep: true },
+    ...THEMES.filter((t) => t.mode === 'light').map(item),
+  ]
+}
 
 export function App() {
   const prefs = useStore((s) => s.prefs)
@@ -18,11 +47,12 @@ export function App() {
   const connections = useStore((s) => s.connections)
   const tabs = useStore((s) => s.tabs)
 
-  /* 主题同步到 <html class="theme-…"> */
+  /* 主题同步到 <html data-theme data-mode>（CSS 按 data-theme 匹配变量组，data-mode 供极少数明暗特判使用） */
   useEffect(() => {
+    const meta = THEMES.find((t) => t.id === prefs.theme) ?? THEMES[0]
     const root = document.documentElement
-    root.classList.toggle('theme-light', prefs.theme === 'light')
-    root.classList.toggle('theme-dark', prefs.theme === 'dark')
+    root.dataset.theme = meta.id
+    root.dataset.mode = meta.mode
   }, [prefs.theme])
 
   /* 历史锁：兜底拦截触控板双指滑动的后退/前进（Safari 不支持 overscroll-behavior 禁用）。
@@ -89,10 +119,10 @@ export function App() {
           </select>
         </label>
         <button
-          className="btn sm icon" title={prefs.theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'}
-          onClick={() => useStore.getState().setPrefs({ theme: prefs.theme === 'dark' ? 'light' : 'dark' })}
+          className="btn sm icon" title="主题配色"
+          onClick={(e) => openContextMenu(e, buildThemeMenu(prefs.theme))}
         >
-          {prefs.theme === 'dark' ? <IconSun /> : <IconMoon />}
+          <IconPalette />
         </button>
       </header>
 

@@ -20,14 +20,36 @@ const MIN_W = 380
 const MIN_H = 220
 const MAX_W_VW = 0.94
 const MAX_H_VH = 0.88
+const Z_BASE = 1100 // 与 --z-modal 一致，叠加弹窗按栈序递增
+
+/* 弹窗栈：支持弹窗叠加（如导出弹窗上叠 SQL 预览）——
+ * 遮罩 z-index 按入栈顺序递增保证后开的上层；Escape 只关闭最上层弹窗 */
+const modalStack: number[] = []
+let modalSeq = 0
 
 export function Modal({ title, sub, width = 520, resizable = false, onClose, foot, children }: ModalProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ sx: number; sy: number; w: number; h: number } | null>(null)
   const [size, setSize] = useState<{ w: number; h: number } | null>(null)
+  const [z, setZ] = useState(Z_BASE)
+  const idRef = useRef(0)
+  if (!idRef.current) idRef.current = ++modalSeq
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const id = idRef.current
+    modalStack.push(id)
+    setZ(Z_BASE + modalStack.indexOf(id) * 10)
+    return () => {
+      const i = modalStack.indexOf(id)
+      if (i >= 0) modalStack.splice(i, 1)
+    }
+  }, [])
+
+  useEffect(() => {
+    const id = idRef.current
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && modalStack[modalStack.length - 1] === id) onClose()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
@@ -52,7 +74,7 @@ export function Modal({ title, sub, width = 520, resizable = false, onClose, foo
   }
 
   return (
-    <div className="modal-mask" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="modal-mask" style={{ zIndex: z }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div
         className="modal"
         ref={boxRef}

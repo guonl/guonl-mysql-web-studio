@@ -3,7 +3,7 @@ import { getAdapter, registerAdapter, useStore } from './store'
 import type { ConnectionConfig, DriverAdapter, QueryTab, ResultSet } from './types'
 import { DemoAdapter } from '../adapters/demo'
 import { WsAdapter } from '../adapters/ws'
-import { splitStatements, isReadOnlySql } from './sql'
+import { splitStatements, isReadOnlySql, isQueryStatement, hasTopLevelLimit, appendLimit } from './sql'
 import { uid, fmtDuration } from './utils'
 import { toast } from '../components/Toast'
 
@@ -79,17 +79,23 @@ export async function runTabSql(tabId: string, sqlOverride?: string): Promise<vo
   for (const stmt of statements) {
     const t0 = performance.now()
     const at = Date.now()
+    const max = useStore.getState().prefs.maxRows
+    /* 查询语句未写 LIMIT 时按右上角行数上限自动附加，避免大表全量拉取拖慢请求 */
+    let exec = stmt
+    if (max > 0 && isQueryStatement(stmt) && !hasTopLevelLimit(stmt)) {
+      exec = appendLimit(stmt, max)
+    }
     const rs: ResultSet = {
       id: uid('rs'),
       title: shorten(stmt),
       columns: [], rows: [], rowCount: 0,
-      durationMs: 0, at, sql: stmt,
+      durationMs: 0, at, sql: exec,
       connId: cfg.id, connName: cfg.name, schema: tab.schema,
       kind: 'query',
+      autoLimit: exec !== stmt ? max : undefined,
     }
     try {
-      const res = await adapter.execute(stmt, tab.schema)
-      const max = useStore.getState().prefs.maxRows
+      const res = await adapter.execute(exec, tab.schema)
       if (res.rows.length > max) {
         rs.rows = res.rows.slice(0, max)
         rs.truncated = true

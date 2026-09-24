@@ -150,13 +150,12 @@ function ExportTableModal({ connId, schema, table, onClose }: { connId: string; 
     return { sql: parts.join('\n\n'), sub }
   }
 
-  /** 生成并打开 SQL 预览弹窗（弹窗内可复制 / 下载） */
+  /** 生成并打开 SQL 预览弹窗（弹窗内可复制 / 下载）。预览叠加在导出弹窗上层，关闭后导出弹窗保留可继续操作 */
   const doPreview = async () => {
     setBusy(true)
     try {
       const { sql, sub } = await buildSql()
       setBusy(false)
-      onClose()
       openSqlModal({
         title: `导出：${schema}.${table}`,
         sub,
