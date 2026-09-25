@@ -84,11 +84,11 @@ src/
 │   ├── client.ts    # WebSocket JSON 协议客户端：连接管理、请求-响应 Promise 化
 │   └── index.ts     # WsAdapter：实现统一的数据访问接口（connect/execute/showCreateTable/...）
 ├── components/      # UI 组件
-│   ├── Sidebar.tsx        # 左侧树（连接/Schema/表）+ 脚本/历史面板（可收起）
+│   ├── Sidebar.tsx        # 左侧树（连接/Schema/表，含新建 Schema 入口）+ 脚本/历史面板（可收起）
 │   ├── Workbench.tsx      # 编辑器工具条、多标签页、运行/美化/保存
 │   ├── ResultsPanel.tsx   # 结果页签（可关闭/清空）、消息页签、结果视图
 │   ├── ResultGrid.tsx     # 虚拟化结果表格
-│   ├── ModalHost.tsx      # 各类弹窗（连接、导出 SQL、右键触发的表单等）
+│   ├── ModalHost.tsx      # 各类弹窗（连接、导出 SQL、新建 Schema、确认框等）
 │   ├── Modal.tsx / SqlModal.tsx  # 弹窗骨架 / SQL 预览弹窗（内置弹窗栈：遮罩层级按打开顺序递增、Esc 只关栈顶，支持弹窗叠加）
 │   ├── SqlViewer.tsx      # 只读 SQL 查看器（CodeMirror + lang-sql 高亮）
 │   └── ContextMenu.tsx    # 通用右键菜单（右键/左键点击均可触发，支持色卡等自定义 icon）

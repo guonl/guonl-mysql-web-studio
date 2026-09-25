@@ -512,6 +512,15 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .tree-row.sys .label, .tree-row.sys .node-icon { color: var(--text-3); font-style: italic; }
 .tree-children { margin-left: 13px; padding-left: 5px; border-left: 1px solid var(--border-1); }
 .tree-empty { padding: 14px 10px; color: var(--text-3); font-size: 12px; text-align: center; line-height: 1.7; }
+/* 「新建 Schema」快捷入口（与 schema 行图标纵向对齐） */
+.tree-add {
+  display: flex; align-items: center; gap: 6px;
+  height: 26px; padding: 0 6px 0 36px;
+  color: var(--text-3); font-size: 12px;
+  cursor: pointer; border-radius: var(--r-sm);
+  white-space: nowrap;
+}
+.tree-add:hover { color: var(--accent-text); background: var(--bg-hover); }
 
 /* 侧栏底部 tabs */
 .sidebar-bottom { border-top: 1px solid var(--border-1); display: flex; flex-direction: column; height: 38%; min-height: 180px; }
@@ -958,6 +967,13 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .form-hint { grid-column: 2; color: var(--text-3); font-size: 11px; line-height: 1.5; margin-top: -4px; }
 .form-divider { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; color: var(--text-3); font-size: 11px; margin: 4px 0; }
 .form-divider::before, .form-divider::after { content: ''; flex: 1; height: 1px; background: var(--border-1); }
+/* 表单内 SQL 预览条（如新建 Schema 生成的 CREATE DATABASE） */
+.sql-preview {
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.6;
+  color: var(--text-2); background: var(--bg-2);
+  border: 1px solid var(--border-1); border-radius: var(--r-sm);
+  padding: 8px 10px; word-break: break-all;
+}
 .form-error {
   grid-column: 1 / -1;
   background: rgba(246, 97, 92, 0.1);

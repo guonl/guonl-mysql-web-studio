@@ -6,7 +6,7 @@ import type { ConnectionConfig, TableMeta } from '../core/types'
 import { copyText } from '../core/utils'
 import { buildTopN, quoteTable } from '../core/sql'
 import { openContextMenu } from './ContextMenu'
-import { openConnModal, openExportModal, openSqlModal, exportTableCsv, confirmDialog } from './ModalHost'
+import { openConnModal, openExportModal, openSchemaModal, openSqlModal, exportTableCsv, confirmDialog } from './ModalHost'
 import { toast } from './Toast'
 import { SIDE_TAB_DEFS } from './SidePanels'
 
@@ -272,6 +272,7 @@ export function Sidebar() {
         : { label: '打开连接', icon: <IconPlug />, onClick: () => void expandConn(cfg) },
       { label: '刷新元数据', icon: <IconRefresh />, disabled: !connected, onClick: () => void refreshConn(cfg) },
       { label: '新建查询', icon: <IconDoc />, disabled: !connected, onClick: () => openQueryTab({ connId: cfg.id, schema: rt?.currentSchema ?? cfg.database }) },
+      { label: '新建 Schema…', icon: <IconPlus />, disabled: !connected, onClick: () => openSchemaModal(cfg.id) },
       { sep: true } as const,
       { label: '编辑连接', icon: <IconEdit />, onClick: () => openConnModal(cfg) },
       { label: '删除连接', icon: <IconTrash />, danger: true, onClick: () => {
@@ -434,7 +435,14 @@ export function Sidebar() {
               )}
               {schemas?.length ? schemaNodes : (
                 <div className="tree-empty">
-                  {status === 'connecting' || loading.has(connKey) ? '正在连接…' : '点击展开以连接并列出 Schema'}
+                  {status === 'connecting' || loading.has(connKey)
+                    ? '正在连接…'
+                    : status === 'connected' ? '没有可见的 Schema' : '点击展开以连接并列出 Schema'}
+                </div>
+              )}
+              {status === 'connected' && !kw && (
+                <div className="tree-add" title="新建 Schema（数据库）" onClick={() => openSchemaModal(cfg.id)}>
+                  <IconPlus /> 新建 Schema
                 </div>
               )}
             </div>
