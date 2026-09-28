@@ -7,7 +7,8 @@ import { buildInserts, buildUpdates, cellLiteral, extractTableFromSql, parseCell
 import { copyText, downloadText, fmtDuration, fmtNum, fmtTime, isNumLike, valueToText } from '../core/utils'
 import { openContextMenu, type CtxItem } from './ContextMenu'
 import { toast } from './Toast'
-import { IconCopy, IconDownload, IconEdit, IconInfo, IconSave, IconTable } from './icons'
+import { requestAiFix, requestAiReadout } from '../ai/chat'
+import { IconCopy, IconDownload, IconEdit, IconInfo, IconSave, IconSparkle, IconTable } from './icons'
 
 const ROW_H = 26
 const OVERSCAN = 10
@@ -87,6 +88,18 @@ export function ResultsPanel({ tab }: { tab?: QueryTab }) {
       { label: '复制INSERT', icon: <IconCopy />, disabled: !isQuery || !hasTable, onClick: () => copyResultInsert(r) },
       { label: '下载CSV', icon: <IconDownload />, disabled: !isQuery, onClick: () => downloadResultCsv(r) },
       { label: '下载INSERT', icon: <IconDownload />, disabled: !isQuery || !hasTable, onClick: () => downloadResultInsert(r) },
+      { sep: true },
+      {
+        label: '让 AI 解读', icon: <IconSparkle />, disabled: !isQuery,
+        onClick: () => void requestAiReadout({
+          sql: r.sql,
+          columns: r.columns.map((c) => c.name),
+          rows: r.rows.slice(0, 10).map((row) => row.map((c) => (c == null ? null : String(c).slice(0, 40)))),
+          rowCount: r.rowCount,
+          truncated: r.rowCount > 10,
+        }),
+      },
+      { label: '让 AI 修复', icon: <IconSparkle />, disabled: r.kind !== 'error', onClick: () => void requestAiFix(r.sql, r.notice ?? '未知错误') },
       { sep: true },
       { label: '关闭', onClick: () => useStore.getState().removeResult(tab!.id, r.id) },
       { label: '关闭其他标签页', disabled: results.length <= 1, onClick: () => useStore.getState().updateTab(tab!.id, { results: [r], activeResultId: r.id }) },
@@ -188,6 +201,12 @@ function ResultView({ tabId, rs }: { tabId: string; rs: ResultSet }) {
         <div className="msg-item">
           <span className="m-time" />
           <span className="m-body" style={{ color: 'var(--text-3)' }}>SQL：{rs.sql}</span>
+        </div>
+        <div className="msg-item">
+          <span className="m-time" />
+          <button className="btn" onClick={() => void requestAiFix(rs.sql, rs.notice ?? '未知错误')}>
+            <IconSparkle /> 让 AI 修复
+          </button>
         </div>
       </div>
     )

@@ -24,6 +24,8 @@
     "@codemirror/search": "^6.5.10",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.36.5",
+    "dompurify": "^3.4.16",
+    "marked": "^18.0.14",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^4.5.5"

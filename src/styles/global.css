@@ -2,6 +2,9 @@
    MySQL Web Studio — 设计令牌 & 全局样式
    ============================================================ */
 
+/* AI 助手样式（独立文件，便于维护） */
+@import './ai.css';
+
 :root {
   /* 字体 */
   --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
@@ -645,6 +648,7 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
   background: var(--bg-0);
   border-bottom: 1px solid var(--border-1);
   flex-shrink: 0;
+  container-type: inline-size;
 }
 .run-btn {
   height: 28px; padding: 0 14px;
@@ -661,7 +665,12 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .run-btn.running { background: var(--warn); }
 .editor-schema-select { width: auto; min-width: 130px; height: 28px; font-size: 12px; }
-.toolbar-hint { color: var(--text-3); font-size: 11px; margin-left: auto; display: flex; align-items: center; gap: 4px; }
+/* 提示文案在空间不足时被压缩裁剪而非折行溢出（此前折行 14 行顶出工具条） */
+.toolbar-hint { color: var(--text-3); font-size: 11px; margin-left: auto; display: flex; align-items: center; gap: 4px; white-space: nowrap; flex-shrink: 1; min-width: 0; overflow: hidden; }
+/* 工具条内按钮与下拉保持完整尺寸，压缩量全部由提示文案消化 */
+.editor-toolbar .btn, .editor-toolbar .select { flex-shrink: 0; }
+/* 空间不足以完整展示提示（约需 985px）时直接隐藏，避免残缺文案 */
+@container (max-width: 984px) { .editor-toolbar .toolbar-hint { display: none; } }
 
 .editor-host { flex: 1; min-height: 60px; position: relative; min-width: 0; }
 /* CM6 基础主题将 .cm-editor 设为 position:relative!important，absolute 定位不生效，
@@ -932,6 +941,8 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
   flex-shrink: 0;
 }
 .modal-foot .spacer { flex: 1; }
+/* 确认框底部按钮居中 */
+.modal-foot .confirm-foot { flex: 1; display: flex; justify-content: center; gap: 8px; }
 /* 弹窗右下角拖拽调整大小 */
 .modal-resize-handle {
   position: absolute; right: 0; bottom: 0;

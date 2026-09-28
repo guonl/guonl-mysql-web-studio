@@ -77,7 +77,7 @@ export function ModalHost() {
           width={420}
           onClose={() => { confirmState.resolve(false); setConfirmState(null) }}
           foot={
-            <>
+            <div className="confirm-foot">
               <button className="btn" onClick={() => { confirmState.resolve(false); setConfirmState(null) }}>取消</button>
               <button
                 className={`btn ${confirmState.danger ? 'danger' : 'primary'}`}
@@ -85,7 +85,7 @@ export function ModalHost() {
               >
                 确定
               </button>
-            </>
+            </div>
           }
         >
           <div style={{ fontSize: 13, lineHeight: 1.7 }}>{confirmState.message}</div>

@@ -8,6 +8,9 @@ import { ToastHost } from './components/Toast'
 import { ContextMenuHost, openContextMenu, CtxItem } from './components/ContextMenu'
 import { ModalHost } from './components/ModalHost'
 import { IconDb, IconGithub, IconPalette } from './components/icons'
+import { AiFab } from './components/ai/AiFab'
+import { AiPanel } from './components/ai/AiPanel'
+import { ConfirmExecModal } from './components/ai/ConfirmExecModal'
 import { THEMES } from './core/types'
 import type { ThemeId, ThemeMeta } from './core/types'
 
@@ -96,6 +99,7 @@ export function App() {
           MySQL Web Studio <span className="ver">v1.0</span>
         </div>
         <div className="topbar-spacer" />
+        <AiFab />
         <a
           className="topbar-link"
           href={REPO_URL}
@@ -133,6 +137,7 @@ export function App() {
         </div>
         {!prefs.sidebarCollapsed && <div className="sidebar-resizer" onMouseDown={onResizeStart} />}
         <Workbench />
+        <AiPanel />
       </div>
 
       {/* 状态栏 */}
@@ -170,6 +175,7 @@ export function App() {
       <ToastHost />
       <ContextMenuHost />
       <ModalHost />
+      <ConfirmExecModal />
     </div>
   )
 }

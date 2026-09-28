@@ -105,6 +105,21 @@ export function Workbench() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  /* ---------------- AI 代码块「插入/替换」意图（seq 变化时执行一次） ---------------- */
+  const editorIntentSeq = useStore((s) => s.editorIntent?.seq ?? 0)
+  useEffect(() => {
+    const intent = useStore.getState().editorIntent
+    const t = useStore.getState().tabs.find((x) => x.id === useStore.getState().activeTabId)
+    if (!intent || !t) return
+    if (intent.type === 'replace') {
+      useStore.getState().setTabSql(t.id, intent.sql)
+    } else {
+      editorRef.current?.insertText(intent.sql)
+    }
+    editorRef.current?.focus()
+    // 仅依赖 seq：同一意图只执行一次，不额外清空 store
+  }, [editorIntentSeq])
+
   if (!tab) return <section className="workbench" />
 
   const cfg = connections.find((c) => c.id === tab.connId)

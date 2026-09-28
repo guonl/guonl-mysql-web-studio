@@ -104,6 +104,10 @@ interface AppState {
 
   /* 偏好 */
   setPrefs: (p: Partial<UIPrefs>) => void
+
+  /* AI → 编辑器意图通道（AI 代码块「插入/替换」用；Workbench 订阅 seq 后执行并清空） */
+  editorIntent: { seq: number; type: 'insert' | 'replace'; sql: string } | null
+  pushEditorIntent: (type: 'insert' | 'replace', sql: string) => void
 }
 
 /* 持久化辅助 */
@@ -141,9 +145,11 @@ const loadTabs = (): { tabs: QueryTab[]; activeTabId: string } => {
 
 const bootTabs = loadTabs()
 
-/* 旧版本结果区固定 330px 且拖拽失效：已保存的旧默认值升级为按视口计算的默认高度 */
+/* 旧版本结果区固定 330px 且拖拽失效：已保存的旧默认值升级为按视口计算的默认高度；
+   非法值（0/负数/NaN，历史脏数据会导致结果区塌陷不可见）一并兜底归一化 */
 const bootPrefs = loadStore<Partial<UIPrefs>>('prefs', {})
 if (bootPrefs.resultHeight === 330) bootPrefs.resultHeight = DEFAULT_PREFS.resultHeight
+if (!(typeof bootPrefs.resultHeight === 'number' && bootPrefs.resultHeight >= 120)) bootPrefs.resultHeight = DEFAULT_PREFS.resultHeight
 
 export const useStore = create<AppState>((set, get) => ({
   connections: loadStore('connections', seedConnections()),
@@ -353,6 +359,13 @@ export const useStore = create<AppState>((set, get) => ({
   setPrefs: (p) => {
     set((st) => ({ prefs: { ...st.prefs, ...p } }))
     persist()
+  },
+
+  /* AI → 编辑器意图通道 */
+  editorIntent: null,
+  pushEditorIntent: (type, sql) => {
+    const seq = (get().editorIntent?.seq ?? 0) + 1
+    set({ editorIntent: { seq, type, sql } })
   },
 }))
 

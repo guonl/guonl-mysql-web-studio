@@ -1,6 +1,6 @@
 # MySQL Web Studio
 
-纯前端的 MySQL 客户端 —— 在浏览器中管理连接、浏览库表、执行 SQL、导出数据，体验对标桌面客户端（如 Navicat / DataGrip 的核心常用功能）。支持 **Web 方式** 直接使用，也可 **打包为 Chrome 插件（MV3）** 安装到浏览器。
+纯前端的 MySQL 客户端 —— 在浏览器中管理连接、浏览库表、执行 SQL、导出数据，体验对标桌面客户端（如 Navicat / DataGrip 的核心常用功能），并内置 **AI 助手（SQL AI）**：自然语言对话查库、自动生成并执行 SQL。支持 **Web 方式** 直接使用，也可 **打包为 Chrome 插件（MV3）** 安装到浏览器。
 
 **内置演示库**：项目自带一个完全离线的示例服务器（3 个 Schema、11 张表 + 2 个视图，纯前端迷你 SQL 引擎模拟），克隆下来打开页面即可体验，无需任何 MySQL 环境。
 
@@ -19,6 +19,7 @@
   - 表右键「导出 SQL」：可选 DDL / 数据 INSERT，支持 `DROP TABLE`、`IF NOT EXISTS`、`INSERT IGNORE`，可「SQL预览」（语法高亮 + 复制/下载，预览叠加在导出弹窗上层、关闭后可继续调整选项）或直接「下载 SQL」
   - 表数据 / 查询结果导出 CSV
 - **界面体验**：9 套主流主题配色（暗色：默认 / One Dark Pro / Dracula / Tokyo Night / Monokai / Nord；亮色：默认 / GitHub Light / Solarized Light），顶栏调色板按钮弹出带色卡预览的主题菜单，选择即生效并持久化、刷新无闪烁；侧边栏可**整体收起为窄条**（点击还原原宽度）；DDL/SQL 弹窗支持**拖拽调整大小**，弹窗可相互叠加（如导出弹窗上叠 SQL 预览）；结果区高度可拖拽；已禁用触控板双指左右滑的前进/后退手势，避免误触导航导致连接中断
+- **AI 助手（SQL AI）**：顶栏一键唤起的右侧对话面板（宽度可拖拽、多会话管理），浏览器端 Function Calling Agent——模型由浏览器直连 OpenAI 兼容端点（预设 DeepSeek / OpenAI / Moonshot / 通义千问 / 豆包 / 智谱 / Ollama / 自定义），数据库操作全部通过本地工具执行：自动注入当前连接 / Schema 上下文，`@表名` 附带真实 DDL；SQL 风险四级分级（L0 只读自动执行并附加 LIMIT，数据 / 结构 / 服务器级变更必须人工确认）；SQL 代码块一键复制 / 插入编辑器 / 直接运行；`/explain` `/optimize` `/tables` `/fix` 斜杠指令；模型配置与对话记录仅存本机
 - **双形态**：Web 模式开箱即用；`npm run build:ext` 可打包为 Chrome 插件（MV3），数据存 `chrome.storage.local`
 
 ## 产品截图
@@ -74,7 +75,7 @@ npm run build:ext   # 构建插件产物到 dist/（静态前端 + manifest.json
 npm run bridge      # 另开终端，启动独立桥接器（默认端口 5189）
 ```
 
-Chrome 打开 `chrome://extensions` → 开启「**开发者模式**」→「**加载已解压的扩展程序**」→ 选择 `dist/` 目录，点击工具栏插件图标即可使用。详见 [使用手册 · Chrome 插件模式](docs/usage.md#10-chrome-插件模式)。
+Chrome 打开 `chrome://extensions` → 开启「**开发者模式**」→「**加载已解压的扩展程序**」→ 选择 `dist/` 目录，点击工具栏插件图标即可使用。详见 [使用手册 · Chrome 插件模式](docs/usage.md#11-chrome-插件模式)。
 
 ## 架构概览
 
@@ -104,8 +105,9 @@ flowchart LR
 
 | 文档 | 说明 |
 | --- | --- |
-| [使用手册](docs/usage.md) | 连接管理、库表浏览、SQL 执行、脚本与历史、导出、快捷键、FAQ |
-| [架构说明](docs/architecture.md) | 桥接器原理、WS JSON 协议、前端结构、二次开发指南 |
+| [使用手册](docs/usage.md) | 连接管理、库表浏览、SQL 执行、AI 助手、脚本与历史、导出、快捷键、FAQ |
+| [架构说明](docs/architecture.md) | 桥接器原理、WS JSON 协议、前端结构、AI 助手模块、二次开发指南 |
+| [AI 助手规划](docs/ai/README.md) | SQL AI（Copilot）产品规划：PRD、交互设计、技术方案 |
 | [项目推广文章](docs/articles/why-i-built-mysql-web-studio.md) | 为什么要造这个轮子、产品定位与使用心得 |
 
 ## 安全提示（重要）
@@ -145,7 +147,8 @@ flowchart LR
 │   ├── adapters/
 │   │   ├── demo/                      # 内置演示库（离线迷你 SQL 引擎 + 示例数据）
 │   │   └── ws/                        # 浏览器端 WS JSON 协议客户端与适配器
-│   ├── components/                    # UI 组件（侧栏、工作台、弹窗、结果面板等）
+│   ├── ai/                            # AI 助手核心（Agent 循环、五工具、SQL 风险守卫）
+│   ├── components/                    # UI 组件（侧栏、工作台、弹窗、结果面板、AI 助手面板等）
 │   ├── core/
 │   │   ├── store.ts                   # Zustand 全局状态 + 本地持久化
 │   │   ├── storage.ts                 # 存储适配（localStorage / chrome.storage 双模式）
@@ -157,6 +160,7 @@ flowchart LR
 ├── docs/
 │   ├── usage.md                       # 使用手册
 │   ├── architecture.md                # 架构说明
+│   ├── ai/                            # AI 助手规划文档（PRD / 设计 / 技术方案）
 │   ├── articles/                      # 推广文章
 │   └── images/                        # 产品截图
 └── vite.config.mts
