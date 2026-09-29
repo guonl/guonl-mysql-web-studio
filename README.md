@@ -37,6 +37,8 @@
 ![SQL 脚本与执行历史](docs/images/screenshot_06.jpeg)
 
 ![暗色 / 亮色主题](docs/images/screenshot_07.jpeg)
+![AI 助手（SQL AI）](docs/images/screenshot_ai/screenshot_02.jpeg)
+![AI 助手（SQL AI）问答](docs/images/screenshot_ai/screenshot_04.jpeg)
 
 ## 快速开始
 
