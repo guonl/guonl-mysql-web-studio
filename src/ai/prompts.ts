@@ -10,16 +10,28 @@ import type { TableMeta } from '../core/types'
 
 const MAX_TABLES_IN_PROMPT = 50
 
-/** 当前连接/Schema 上下文（无可用连接返回 null）：
- *  优先取活动查询标签页绑定的连接；标签页未选连接（或连接已被删）时，
- *  回退到第一个在线连接——左侧树已连接但新标签页尚未绑定连接时，AI 仍能注入正确的库上下文 */
+/** 当前连接/Schema 上下文（无可用连接返回 null），按优先级：
+ *  1. 全局活动 Schema——左侧树最后打开 / 右键「设为活动 Schema」的库（连接在线时），AI 跟随浏览焦点；
+ *  2. 活动查询标签页绑定的连接；
+ *  3. 回退第一个在线连接——真实连接优先于演示库（演示库是自动连接的引导场景） */
 export function activeCtx(): { connId: string; connName: string; schema?: string } | null {
   const st = useStore.getState()
+  const ref = st.activeSchemaRef
+  if (ref) {
+    const cfg = st.connections.find((c) => c.id === ref.connId)
+    if (cfg && st.runtime[cfg.id]?.status === 'connected') {
+      return { connId: cfg.id, connName: cfg.name, schema: ref.schema || cfg.database }
+    }
+  }
   const tab = st.tabs.find((t) => t.id === st.activeTabId)
   const bound = tab?.connId ? st.connections.find((c) => c.id === tab.connId) : undefined
-  const cfg = bound ?? st.connections.find((c) => st.runtime[c.id]?.status === 'connected')
+  if (bound) {
+    return { connId: bound.id, connName: bound.name, schema: tab?.schema ?? bound.database }
+  }
+  const cfg = st.connections.find((c) => st.runtime[c.id]?.status === 'connected' && c.type !== 'demo')
+    ?? st.connections.find((c) => st.runtime[c.id]?.status === 'connected')
   if (!cfg) return null
-  const schema = bound ? (tab?.schema ?? cfg.database) : (st.runtime[cfg.id]?.currentSchema ?? cfg.database)
+  const schema = st.runtime[cfg.id]?.currentSchema ?? cfg.database
   return { connId: cfg.id, connName: cfg.name, schema }
 }
 

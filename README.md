@@ -109,6 +109,7 @@ flowchart LR
 | [架构说明](docs/architecture.md) | 桥接器原理、WS JSON 协议、前端结构、AI 助手模块、二次开发指南 |
 | [AI 助手规划](docs/ai/README.md) | SQL AI（Copilot）产品规划：PRD、交互设计、技术方案 |
 | [项目推广文章](docs/articles/why-i-built-mysql-web-studio.md) | 为什么要造这个轮子、产品定位与使用心得 |
+| [AI 功能发布博客](docs/articles/mysql-web-studio-ai-assistant.md) | AI 助手（SQL AI）设计思路：浏览器端 Function Calling Agent、风险分级与确认矩阵 |
 
 ## 安全提示（重要）
 

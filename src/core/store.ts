@@ -61,6 +61,9 @@ interface AppState {
   connections: ConnectionConfig[]
   runtime: Record<string, ConnRuntime>
   meta: Record<string, ConnMetaCache>
+  /** 全局活动 Schema（连接 × 库）：左侧树最后打开 / 右键「设为活动 Schema」的库。
+   *  AI 助手上下文以它为最高优先级——小助手跟随用户当前的浏览焦点（Schema 维度） */
+  activeSchemaRef: { connId: string; schema: string } | null
   tabs: QueryTab[]
   activeTabId: string
   scripts: SavedScript[]
@@ -70,6 +73,8 @@ interface AppState {
   /* 连接管理 */
   upsertConnection: (c: ConnectionConfig) => void
   removeConnection: (id: string) => void
+  /** 设置全局活动 Schema（左侧树打开 Schema / 右键「设为活动 Schema」/ 打开连接的默认库时调用） */
+  setActiveSchema: (connId: string, schema: string) => void
 
   /* 连接生命周期 */
   setRuntime: (id: string, rt: Partial<ConnRuntime>) => void
@@ -155,6 +160,7 @@ export const useStore = create<AppState>((set, get) => ({
   connections: loadStore('connections', seedConnections()),
   runtime: {},
   meta: {},
+  activeSchemaRef: null,
   tabs: bootTabs.tabs,
   activeTabId: bootTabs.activeTabId,
   scripts: loadStore('scripts', []),
@@ -181,11 +187,13 @@ export const useStore = create<AppState>((set, get) => ({
       return {
         connections: st.connections.filter((c) => c.id !== id),
         runtime, meta,
+        activeSchemaRef: st.activeSchemaRef?.connId === id ? null : st.activeSchemaRef,
         tabs: st.tabs.map((t) => (t.connId === id ? { ...t, connId: undefined } : t)),
       }
     })
     persist()
   },
+  setActiveSchema: (connId, schema) => set({ activeSchemaRef: { connId, schema } }),
 
   /* 连接生命周期 */
   setRuntime: (id, rt) =>

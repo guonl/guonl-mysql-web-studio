@@ -145,6 +145,9 @@ export function Workbench() {
     void ensureConnected(c)
       .then(() => {
         if (c.database) useStore.getState().updateTab(tab.id, { schema: c.database })
+        /* tab 切连接 → 默认库同步为全局活动 Schema，AI 助手上下文跟随切换 */
+        const cur = c.database || useStore.getState().runtime[c.id]?.currentSchema
+        if (cur) useStore.getState().setActiveSchema(c.id, cur)
       })
       .catch((e) => toast.error(`连接失败：${e instanceof Error ? e.message : String(e)}`))
   }

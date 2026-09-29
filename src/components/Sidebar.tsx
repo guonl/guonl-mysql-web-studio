@@ -184,6 +184,9 @@ export function Sidebar() {
       setExpanded((p) => onlySchema(p, cfg.id, cfg.database!))
       void loadTables(cfg, cfg.database)
     }
+    /* 打开连接（含真实库）→ 默认库成为全局活动 Schema，AI 助手上下文跟随切换 */
+    const cur = cfg.database || useStore.getState().runtime[cfg.id]?.currentSchema
+    if (cur) useStore.getState().setActiveSchema(cfg.id, cur)
   }
 
   /* 打开 schema（手风琴模式）：同一连接同时只展开/高亮一个；再次点击收起 */
@@ -195,7 +198,11 @@ export function Sidebar() {
       if (wasOpen) q.delete(key)
       return q
     })
-    if (!wasOpen) void loadTables(cfg, schema)
+    if (!wasOpen) {
+      void loadTables(cfg, schema)
+      /* 展开某 Schema → 它成为全局活动 Schema（连接 × 库维度），AI 助手上下文跟随切换 */
+      useStore.getState().setActiveSchema(cfg.id, schema)
+    }
   }
 
   const refreshConn = async (cfg: ConnectionConfig) => {
@@ -244,9 +251,12 @@ export function Sidebar() {
     void runTabSql(id)
   }
 
-  const setTabSchema = (schema: string) => {
-    if (activeTabId) useStore.getState().updateTab(activeTabId, { schema })
-    toast.info(`当前标签页 Schema → ${schema}`)
+  const setTabSchema = (cfg: ConnectionConfig, schema: string) => {
+    /* 全局活动 Schema 切到该连接 × 库（AI 助手跟随）；活动标签页也一并切换连接绑定，
+       避免出现「标签页仍绑旧连接、Schema 却是新连接的库」的错乱组合 */
+    useStore.getState().setActiveSchema(cfg.id, schema)
+    if (activeTabId) useStore.getState().updateTab(activeTabId, { connId: cfg.id, schema })
+    toast.info(`活动 Schema → ${cfg.name} / ${schema}`)
   }
 
   const tableMenu = (cfg: ConnectionConfig, schema: string, t: TableMeta) => [
@@ -288,7 +298,7 @@ export function Sidebar() {
   }
 
   const schemaMenu = (cfg: ConnectionConfig, schema: string) => [
-    { label: '设为活动 Schema', icon: <IconSchema />, onClick: () => setTabSchema(schema) },
+    { label: '设为活动 Schema', icon: <IconSchema />, onClick: () => setTabSchema(cfg, schema) },
     { label: '在此新建查询', icon: <IconDoc />, onClick: () => openQueryTab({ connId: cfg.id, schema }) },
     { label: '刷新表', icon: <IconRefresh />, onClick: () => {
       const ad = getAdapter(cfg)

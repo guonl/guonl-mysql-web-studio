@@ -1,6 +1,6 @@
 # MySQL Web Studio 使用手册
 
-> 两种使用形态，功能完全一致：**Web 模式**（`npm run dev` 后打开终端提示的地址，默认 <http://localhost:5173>，桥接器随 dev server 自动启动）和 **Chrome 插件模式**（打包安装到浏览器，见[第 11 节](#11-chrome-插件模式)）。
+> 两种使用形态，功能完全一致：**Web 模式**（`npm run dev` 后打开终端提示的地址，默认 <http://localhost:5188>，桥接器随 dev server 自动启动）和 **Chrome 插件模式**（打包安装到浏览器，见[第 11 节](#11-chrome-插件模式)）。
 
 ## 目录
 
