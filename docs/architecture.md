@@ -90,6 +90,7 @@ src/
 │   └── index.ts     # WsAdapter：实现统一的数据访问接口（connect/execute/showCreateTable/...）
 ├── components/      # UI 组件
 │   ├── Sidebar.tsx        # 左侧树（连接/Schema/表，含新建 Schema 入口）+ 脚本/历史面板（可收起）
+│   ├── TableDesigner.tsx  # 表设计器弹窗（列/索引双标签网格 + ALTER/CREATE 实时预览）
 │   ├── Workbench.tsx      # 编辑器工具条、多标签页、运行/美化/保存
 │   ├── ResultsPanel.tsx   # 结果页签（可关闭/清空）、消息页签、结果视图
 │   ├── ResultGrid.tsx     # 虚拟化结果表格
@@ -101,7 +102,9 @@ src/
 ├── core/
 │   ├── store.ts     # Zustand：connections/runtime/meta/tabs/scripts/history/prefs
 │   │                #   persist() 按策略写入 localStorage（如未记住密码的连接剔除密码）
-│   └── types.ts     # ConnectionConfig / QueryTab / ExecResult / ColumnMeta / UIPrefs / ThemeId + THEMES 主题元数据
+│   ├── tableDesign.ts  # 表设计器核心：列/索引草稿模型（ColumnDraft/IndexDraft）、
+│   │                #   buildColumnDef / designAlterSql / buildCreateTableSql、保存前校验
+│   └── types.ts     # ConnectionConfig / QueryTab / ExecResult / ColumnMeta / IndexMeta / UIPrefs / ThemeId + THEMES 主题元数据
 ├── ai/              # AI 助手核心模块（详见第 6 节）
 │   ├── agent/       # guard.ts 风险分级 / tools.ts 五工具 / loop.ts Agent 主循环
 │   ├── prompts.ts   # 上下文组装（连接/Schema/表清单、@表名 DDL 附注）
@@ -202,6 +205,11 @@ UI 组件在 `src/components/ai/`：AiFab（顶栏入口）、AiPanel（右侧�
 
 2. `src/adapters/ws/client.ts` 增加类型化方法（发送 `{id, op, args}`，按 `id` 等待响应）
 3. `src/adapters/ws/index.ts` 的 WsAdapter 上暴露该能力，供 UI 调用
+
+### 适配器与表设计器扩展
+
+- **适配器契约**：UI 只依赖 `src/core/types.ts` 的 `DriverAdapter` 接口。新增驱动适配器（如 PostgreSQL）时必须实现 `connect / execute / getColumns` 等核心方法；`getPK` / `getIndexes` 等元数据方法同为接口成员（`getIndexes` 返回 `IndexMeta[]`，来自 `information_schema.STATISTICS`，不含 PRIMARY），不支持的实现可返回空数组
+- **表设计器**：UI（`TableDesigner.tsx`）只维护草稿（`ColumnDraft` / `IndexDraft`），SQL 生成与校验收敛在 `core/tableDesign.ts`（`designAlterSql` / `buildCreateTableSql` / `validateColumnDrafts` / `validateIndexDrafts`）。扩展列属性（如 `ZEROFILL` 独立开关）时改草稿模型与 `buildColumnDef` 即可，无需触碰 SQL 执行链路
 
 ### 部署为独立桥接服务
 

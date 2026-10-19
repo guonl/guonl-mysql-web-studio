@@ -110,10 +110,25 @@ interface SqlModalProps {
   filename?: string
   onClose: () => void
   extraFoot?: ReactNode
+  /** 提供时在底部渲染「执行」按钮：成功后自动关闭；失败 toast 并保持弹窗打开（可复制 SQL 重试） */
+  onExecute?: () => Promise<void>
 }
 
 /** 展示 SQL（DDL / INSERT 等），支持复制与下载；可拖拽调整大小避免 SQL 换行 */
-export function SqlModal({ title, sub, sql, filename, onClose, extraFoot }: SqlModalProps) {
+export function SqlModal({ title, sub, sql, filename, onClose, extraFoot, onExecute }: SqlModalProps) {
+  const [running, setRunning] = useState(false)
+  const run = async () => {
+    if (!onExecute || running) return
+    setRunning(true)
+    try {
+      await onExecute()
+      onClose()
+    } catch (e) {
+      toast.error(`执行失败：${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setRunning(false)
+    }
+  }
   return (
     <Modal
       title={title}
@@ -128,9 +143,14 @@ export function SqlModal({ title, sub, sql, filename, onClose, extraFoot }: SqlM
           <button className="btn" onClick={() => { void copyText(sql).then((ok) => ok ? toast.success('已复制到剪贴板') : toast.error('复制失败，请手动选择复制')) }}>
             <IconCopy /> 复制
           </button>
-          <button className="btn primary" onClick={() => { downloadText(filename || 'query.sql', sql, 'application/sql'); toast.success('已下载') }}>
+          <button className={onExecute ? 'btn' : 'btn primary'} onClick={() => { downloadText(filename || 'query.sql', sql, 'application/sql'); toast.success('已下载') }}>
             <IconDownload /> 下载 .sql
           </button>
+          {onExecute && (
+            <button className="btn primary" disabled={running} onClick={() => { void run() }}>
+              {running ? '执行中…' : '执行'}
+            </button>
+          )}
         </>
       }
     >

@@ -1,6 +1,6 @@
 /* 演示适配器：完全离线的内置 MySQL 模拟 */
 
-import { DriverAdapter, ExecResult, ColumnMeta, TableMeta } from '../../core/types'
+import { DriverAdapter, ExecResult, ColumnMeta, IndexMeta, TableMeta } from '../../core/types'
 import { DEMO_SCHEMAS, DEMO_SERVER_VERSION, DemoTableDef, SYSTEM_SCHEMAS } from './data'
 import { demoExecute, DemoSqlError, renderCreateTable } from './engine'
 
@@ -56,11 +56,26 @@ export class DemoAdapter implements DriverAdapter {
       defaultValue: c.def ?? null,
       extra: c.extra ?? '',
       comment: c.comment ?? '',
+      /* 演示数据集统一 utf8mb4；仅字符类列带字符集（与 information_schema 行为一致） */
+      ...(this.isCharType(c.type) ? { charset: 'utf8mb4', collation: 'utf8mb4_general_ci' } : {}),
     }))
+  }
+
+  private isCharType(type: string): boolean {
+    return /char|text|enum|set/i.test(type)
   }
 
   async getPK(schema: string, table: string): Promise<string[]> {
     return this.find(schema, table).pk
+  }
+
+  /** 表的二级索引（不含 PRIMARY）；演示数据集的 indexes 字段映射 */
+  async getIndexes(schema: string, table: string): Promise<IndexMeta[]> {
+    return (this.find(schema, table).indexes ?? []).map((ix) => ({
+      name: ix.name,
+      kind: ix.unique ? ('UNIQUE' as const) : ('INDEX' as const),
+      cols: ix.cols,
+    }))
   }
 
   async showCreateTable(schema: string, table: string): Promise<string> {

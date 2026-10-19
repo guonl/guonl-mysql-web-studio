@@ -1,17 +1,23 @@
-/* 全局弹窗编排宿主：确认框 / SQL 预览 / 表导出 / 连接编辑 / 新建 Schema */
+/* 全局弹窗编排宿主：确认框 / SQL 预览 / 表导出 / 连接编辑 / 新建 Schema / 表设计器 */
 import { useState, type ReactNode } from 'react'
 import { useStore } from '../core/store'
 import { ensureConnected } from '../core/connOps'
 import type { ConnectionConfig } from '../core/types'
 import { quoteIdent, quoteTable, buildInserts, toCsv } from '../core/sql'
 import { downloadText } from '../core/utils'
+import { CHARSET_COLLATIONS, defaultCollation } from '../core/tableDesign'
 import { Modal, SqlModal } from './Modal'
 import { ConnectionModal } from './ConnectionModal'
+import { TableDesigner } from './TableDesigner'
 import { toast } from './Toast'
 import { IconDownload } from './icons'
 
 /* ---------------- SqlModal（DDL / INSERT 预览） ---------------- */
-interface SqlModalState { title: string; sub?: string; sql: string; filename?: string }
+interface SqlModalState {
+  title: string; sub?: string; sql: string; filename?: string
+  /** 提供时在弹窗底部渲染「执行」按钮（如表设计器保存） */
+  onExecute?: () => Promise<void>
+}
 let openSqlModalFn: ((s: SqlModalState) => void) | null = null
 export function openSqlModal(s: SqlModalState) { openSqlModalFn?.(s) }
 
@@ -61,6 +67,12 @@ export function openExportModal(connId: string, schema: string, table: string) {
 let schemaModalFn: ((connId: string) => void) | null = null
 export function openSchemaModal(connId: string) { schemaModalFn?.(connId) }
 
+/* ---------------- 表设计器（Navicat 式：列编辑 + ALTER/CREATE 预览） ---------------- */
+let designerFn: ((p: { connId: string; schema: string; table: string | null }) => void) | null = null
+export function openTableDesigner(connId: string, schema: string, table: string | null) {
+  designerFn?.({ connId, schema, table })
+}
+
 /** 直接导出表数据为 CSV（右键菜单快捷动作） */
 export async function exportTableCsv(connId: string, schema: string, table: string) {
   const st = useStore.getState()
@@ -87,6 +99,7 @@ export function ModalHost() {
   const [connOpen, setConnOpen] = useState(false)
   const [exportTarget, setExportTarget] = useState<{ connId: string; schema: string; table: string } | null>(null)
   const [schemaConnId, setSchemaConnId] = useState<string | null>(null)
+  const [designerTarget, setDesignerTarget] = useState<{ connId: string; schema: string; table: string | null } | null>(null)
 
   openSqlModalFn = setSqlState
   confirmFn = (s) => setConfirmState(s)
@@ -94,6 +107,7 @@ export function ModalHost() {
   connModalFn = (initial) => { setConnInitial(initial); setConnOpen(true) }
   exportFn = setExportTarget
   schemaModalFn = setSchemaConnId
+  designerFn = setDesignerTarget
 
   return (
     <>
@@ -148,6 +162,9 @@ export function ModalHost() {
       )}
       {schemaConnId && (
         <CreateSchemaModal connId={schemaConnId} onClose={() => setSchemaConnId(null)} />
+      )}
+      {designerTarget && (
+        <TableDesigner {...designerTarget} onClose={() => setDesignerTarget(null)} />
       )}
     </>
   )
@@ -301,21 +318,6 @@ function ExportTableModal({ connId, schema, table, onClose }: { connId: string; 
 }
 
 /* ---------------- 新建 Schema（数据库）弹窗 ---------------- */
-
-/** 常用字符集 → 候选排序规则（MySQL 8.0 默认排序规则置顶） */
-const CHARSET_COLLATIONS: Record<string, string[]> = {
-  utf8mb4: ['utf8mb4_0900_ai_ci', 'utf8mb4_general_ci', 'utf8mb4_unicode_ci', 'utf8mb4_bin'],
-  utf8: ['utf8_general_ci', 'utf8_unicode_ci', 'utf8_bin'],
-  latin1: ['latin1_swedish_ci', 'latin1_bin'],
-  ascii: ['ascii_general_ci', 'ascii_bin'],
-  gbk: ['gbk_chinese_ci', 'gbk_bin'],
-}
-
-/** 依服务器大版本取 utf8mb4 的默认排序规则（8.0+ 为 utf8mb4_0900_ai_ci，5.x 为 utf8mb4_general_ci） */
-function defaultCollation(serverVersion?: string): string {
-  const major = Number(serverVersion?.split('.')?.[0] ?? 0)
-  return major >= 8 ? 'utf8mb4_0900_ai_ci' : 'utf8mb4_general_ci'
-}
 
 function CreateSchemaModal({ connId, onClose }: { connId: string; onClose: () => void }) {
   const cfg = useStore((s) => s.connections.find((c) => c.id === connId))

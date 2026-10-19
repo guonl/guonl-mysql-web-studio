@@ -1082,6 +1082,112 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .sql-viewer.fill, .sql-viewer.fill > div { height: 100%; }
 .sql-viewer.fill .cm-editor { max-height: none; height: 100%; }
 
+/* ============ 表设计器 ============ */
+.designer { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 480px; }
+.designer-top { flex-shrink: 0; }
+.designer-warn {
+  margin-top: 2px; padding: 7px 10px;
+  background: rgba(245, 166, 35, 0.1);
+  border: 1px solid rgba(245, 166, 35, 0.35);
+  border-radius: var(--r-sm);
+  color: var(--warn);
+  font-size: 11.5px; line-height: 1.5;
+}
+.designer-grid-wrap {
+  flex: 1; min-height: 140px;
+  overflow: auto;
+  border: 1px solid var(--border-1);
+  border-radius: var(--r-md);
+  background: var(--bg-0);
+}
+.designer-grid { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.designer-grid th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--grid-header-bg);
+  padding: 7px 8px;
+  text-align: left;
+  font-weight: 600; font-size: 11.5px; color: var(--text-2);
+  border-bottom: 1px solid var(--border-2);
+  white-space: nowrap;
+}
+.designer-grid td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--grid-line);
+  vertical-align: middle;
+}
+.designer-grid tbody tr:not(.row-new):hover td { background: var(--bg-hover); }
+.designer-grid input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+/* 窄列：主键 / 布尔开关 / 无符号 */
+.designer-grid th.col-pk, .designer-grid th.col-bool,
+.designer-grid td.col-pk, .designer-grid td.col-bool { text-align: center; width: 44px; }
+.designer-grid th.col-uns, .designer-grid td.col-uns { text-align: center; width: 56px; }
+/* 默认值列：checkbox + 输入框组合，限制输入框宽度 */
+.designer-grid td.col-default { white-space: nowrap; }
+.designer-grid td.col-default .input { width: 110px; }
+/* 类型下拉固定宽度；长度/值输入框独立窄列 */
+.designer-grid th.col-type, .designer-grid td.col-type { width: 148px; }
+.designer-grid th.col-len, .designer-grid td.col-len { width: 100px; }
+.designer-grid td.col-type .select { width: 136px; }
+.designer-grid td.col-len .input { width: 88px; }
+/* 列名与注释列撑满剩余空间 */
+.designer-grid td.col-name .input, .designer-grid td.col-comment .input { min-width: 110px; }
+/* 操作列：上移 / 下移 / 删除 */
+.designer-grid td.col-ops { text-align: right; white-space: nowrap; width: 84px; }
+/* 新增行淡染高亮；生成列整行降透明度（锁定编辑） */
+.designer-grid tbody tr.row-new td { background: var(--accent-weak); }
+.designer-grid tbody tr.row-generated td { opacity: 0.55; }
+.designer-add { margin-top: 8px; }
+/* 列 / 索引 Tab 栏 */
+.designer-tabs { display: flex; gap: 4px; flex-shrink: 0; }
+.designer-tab {
+  padding: 5px 16px;
+  border: 1px solid var(--border-1);
+  border-bottom: none;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  background: var(--bg-1);
+  color: var(--text-2);
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+}
+.designer-tab:hover { color: var(--text-0); background: var(--bg-hover); }
+.designer-tab.on {
+  background: var(--bg-0);
+  color: var(--accent);
+  border-color: var(--border-2);
+  font-weight: 600;
+}
+/* 索引网格：名称 / 类型 / 列 / 操作 */
+.designer-idx-grid th.idx-name, .designer-idx-grid td.idx-name { width: 200px; }
+.designer-idx-grid th.idx-kind, .designer-idx-grid td.idx-kind { width: 130px; }
+.designer-idx-grid td.idx-name .input, .designer-idx-grid td.idx-cols .input { width: 100%; min-width: 140px; }
+.designer-idx-grid td.idx-kind .select { width: 118px; }
+.designer-idx-grid td.idx-empty {
+  text-align: center;
+  padding: 18px 8px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.designer-preview { flex-shrink: 0; height: 190px; display: flex; flex-direction: column; gap: 6px; }
+.designer-changes { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.designer-chip {
+  display: inline-flex; align-items: center;
+  padding: 2px 10px;
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  background: var(--accent-weak);
+  color: var(--accent-text);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.designer-nochange { font-size: 11.5px; color: var(--text-3); }
+.designer-sql { flex: 1; min-height: 0; }
+.designer-loading { padding: 46px 0; text-align: center; color: var(--text-3); font-size: 12.5px; }
+.designer-error {
+  padding: 34px 16px;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  color: var(--err); font-size: 12.5px; line-height: 1.6; word-break: break-all;
+}
+
 /* 导出弹窗 */
 .export-options { display: flex; flex-direction: column; gap: 10px; }
 .opt-group .opt-title { font-size: 12px; color: var(--text-2); margin-bottom: 6px; font-weight: 600; }

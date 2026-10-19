@@ -2,7 +2,7 @@
  * （复用 bridge-core 的 mysql2 实现，直连 MySQL，无需任何桥接器）。
  * 元数据 SQL 与 WsAdapter 完全一致，仅传输层从 WebSocket 换成 Electron IPC。 */
 
-import type { ColumnMeta, ConnectionConfig, DriverAdapter, ExecResult, TableMeta } from '../../core/types'
+import type { ColumnMeta, ConnectionConfig, DriverAdapter, ExecResult, IndexMeta, TableMeta } from '../../core/types'
 
 interface ErrInfo { code: number | string; message: string; fatal?: boolean }
 
@@ -147,7 +147,7 @@ export class IpcAdapter implements DriverAdapter {
   async getColumns(schema: string, table: string): Promise<ColumnMeta[]> {
     const esc = (s: string) => s.replace(/'/g, "''")
     const r = await this.execute(
-      `SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT
+      `SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT, CHARACTER_SET_NAME, COLLATION_NAME
        FROM information_schema.COLUMNS
        WHERE TABLE_SCHEMA = '${esc(schema)}' AND TABLE_NAME = '${esc(table)}'
        ORDER BY ORDINAL_POSITION`,
@@ -160,6 +160,8 @@ export class IpcAdapter implements DriverAdapter {
       defaultValue: row[4] == null ? null : String(row[4]),
       extra: row[5] == null ? '' : String(row[5]),
       comment: row[6] == null ? '' : String(row[6]),
+      charset: row[7] == null ? undefined : String(row[7]),
+      collation: row[8] == null ? undefined : String(row[8]),
     }))
   }
 
@@ -197,6 +199,36 @@ export class IpcAdapter implements DriverAdapter {
        ORDER BY ORDINAL_POSITION`,
     )
     return r.rows.map((row) => String(row[0]))
+  }
+
+  /** 表的二级索引（不含 PRIMARY）；来自 information_schema.STATISTICS，按索引名分组聚合 */
+  async getIndexes(schema: string, table: string): Promise<IndexMeta[]> {
+    const esc = (s: string) => s.replace(/'/g, "''")
+    const r = await this.execute(
+      `SELECT INDEX_NAME, NON_UNIQUE, INDEX_TYPE, COLUMN_NAME, SEQ_IN_INDEX
+       FROM information_schema.STATISTICS
+       WHERE TABLE_SCHEMA = '${esc(schema)}' AND TABLE_NAME = '${esc(table)}'
+         AND INDEX_NAME <> 'PRIMARY'
+       ORDER BY INDEX_NAME, SEQ_IN_INDEX`,
+    )
+    const out: IndexMeta[] = []
+    const byName = new Map<string, IndexMeta>()
+    for (const row of r.rows) {
+      if (row[3] == null) continue /* MySQL 8.0 函数索引行 COLUMN_NAME 为 null，跳过 */
+      const name = String(row[0])
+      let ix = byName.get(name)
+      if (!ix) {
+        ix = {
+          name,
+          kind: String(row[2]) === 'FULLTEXT' ? 'FULLTEXT' : Number(row[1]) === 0 ? 'UNIQUE' : 'INDEX',
+          cols: [],
+        }
+        byName.set(name, ix)
+        out.push(ix)
+      }
+      ix.cols.push(String(row[3]))
+    }
+    return out
   }
 
   async showCreateTable(schema: string, table: string): Promise<string> {

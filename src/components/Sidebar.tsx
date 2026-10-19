@@ -6,7 +6,7 @@ import type { ConnectionConfig, TableMeta } from '../core/types'
 import { copyText } from '../core/utils'
 import { buildTopN, quoteTable } from '../core/sql'
 import { openContextMenu } from './ContextMenu'
-import { openConnModal, openExportModal, openSchemaModal, openSqlModal, exportTableCsv, confirmDialog } from './ModalHost'
+import { openConnModal, openExportModal, openSchemaModal, openSqlModal, openTableDesigner, exportTableCsv, confirmDialog } from './ModalHost'
 import { toast } from './Toast'
 import { SIDE_TAB_DEFS } from './SidePanels'
 
@@ -263,6 +263,7 @@ export function Sidebar() {
     { label: '复制表名', icon: <IconCopy />, onClick: () => { void copyText(t.name).then((ok) => ok && toast.success(`已复制 ${t.name}`)) } },
     { label: `复制 \`${schema}\`.\`${t.name}\``, icon: <IconCopy />, onClick: () => { void copyText(`${schema}.${t.name}`).then((ok) => ok && toast.success('已复制全限定表名')) } },
     { sep: true } as const,
+    { label: '设计表…', icon: <IconWrench />, disabled: t.type === 'VIEW', onClick: () => openTableDesigner(cfg.id, schema, t.name) },
     { label: '查看 DDL', icon: <IconDoc />, onClick: () => void showDdl(cfg, schema, t.name) },
     { label: '最近 10 条记录', icon: <IconHistory />, onClick: () => void openTopN(cfg, schema, t.name, 10) },
     { label: '查看前 100 行', icon: <IconTable />, onClick: () => openTopRows(cfg, schema, t.name, 100) },
@@ -300,6 +301,7 @@ export function Sidebar() {
   const schemaMenu = (cfg: ConnectionConfig, schema: string) => [
     { label: '设为活动 Schema', icon: <IconSchema />, onClick: () => setTabSchema(cfg, schema) },
     { label: '在此新建查询', icon: <IconDoc />, onClick: () => openQueryTab({ connId: cfg.id, schema }) },
+    { label: '新建表…', icon: <IconPlus />, onClick: () => openTableDesigner(cfg.id, schema, null) },
     { label: '刷新表', icon: <IconRefresh />, onClick: () => {
       const ad = getAdapter(cfg)
       if (!ad) return

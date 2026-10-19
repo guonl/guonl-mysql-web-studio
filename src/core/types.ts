@@ -38,6 +38,19 @@ export interface ColumnMeta {
   /** 来源表 / 库（由桥接器从 mysql2 字段元数据补齐，供结果集编辑定位表） */
   table?: string
   schema?: string
+  /** 列字符集 / 排序规则（仅字符类列有值）；表设计器生成 MODIFY 时回写，防止回落到表默认字符集 */
+  charset?: string
+  collation?: string
+}
+
+/** 二级索引元数据（PRIMARY 主键由 getPK 单独返回，不在此列） */
+export type IndexKind = 'INDEX' | 'UNIQUE' | 'FULLTEXT'
+
+export interface IndexMeta {
+  name: string
+  kind: IndexKind
+  /** 索引列（按 SEQ_IN_INDEX 排序）；前缀长度形如 name(10) */
+  cols: string[]
 }
 
 export interface TableMeta {
@@ -68,6 +81,8 @@ export interface DriverAdapter {
   listSchemas(): Promise<string[]>
   listTables(schema: string): Promise<TableMeta[]>
   getColumns(schema: string, table: string): Promise<ColumnMeta[]>
+  /** 表的二级索引（不含 PRIMARY）；不支持时缺省 */
+  getIndexes?(schema: string, table: string): Promise<IndexMeta[]>
   /** 一次性取回整 schema 全部表的列（键为表名），比逐表 getColumns 高效；供自动补全预取 */
   getSchemaColumns?(schema: string): Promise<Record<string, ColumnMeta[]>>
   getPK(schema: string, table: string): Promise<string[]>
