@@ -2,13 +2,30 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../core/store'
 import { openQueryTab } from '../core/connOps'
-import { timeAgo, fmtDuration, copyText } from '../core/utils'
+import { timeAgo, fmtDuration, copyText, downloadText } from '../core/utils'
+import { IS_DESKTOP } from '../core/storage'
 import { confirmDialog } from './ModalHost'
 import { toast } from './Toast'
 import { openContextMenu } from './ContextMenu'
-import { IconDoc, IconHistory, IconTrash, IconEdit, IconCopy, IconPlus } from './icons'
+import { IconDoc, IconHistory, IconTrash, IconEdit, IconCopy, IconPlus, IconDownload } from './icons'
 
 /* ---------------- 已保存脚本 ---------------- */
+
+/** 文件名安全化：去掉文件系统非法字符 */
+const safeFileName = (name: string) => name.replace(/[\\/:*?"<>|]/g, '_').trim() || '未命名脚本'
+
+/** 组装导出内容：头部注释标注来源信息，便于归档识别 */
+function buildScriptSql(sc: { name: string; sql: string; connName?: string; schema?: string }): string {
+  const head = [
+    '-- 导出自 MySQL Web Studio',
+    `-- 脚本: ${sc.name}`,
+    sc.connName ? `-- 关联连接: ${sc.connName}` : null,
+    sc.schema ? `-- Schema: ${sc.schema}` : null,
+    `-- 导出时间: ${new Date().toLocaleString()}`,
+  ].filter(Boolean).join('\n')
+  return `${head}\n\n${sc.sql}\n`
+}
+
 export function ScriptsPanel() {
   const scripts = useStore((s) => s.scripts)
   const deleteScript = useStore((s) => s.deleteScript)
@@ -28,6 +45,10 @@ export function ScriptsPanel() {
   const openScript = (id: string) => {
     const sc = scripts.find((s) => s.id === id)
     if (!sc) return
+    // 已有该脚本的标签页则直接切换过去，避免重复开新窗口
+    const st = useStore.getState()
+    const existed = st.tabs.find((t) => t.savedScriptId === sc.id)
+    if (existed) { st.setActiveTab(existed.id); return }
     openQueryTab({
       title: sc.name,
       sql: sc.sql,
@@ -46,6 +67,27 @@ export function ScriptsPanel() {
     setEditingId(null)
   }
 
+  /** 导出脚本：单脚本走系统另存为；多脚本桌面端选目录批量写，Web 端逐个下载 */
+  const exportScripts = async (targets: typeof scripts) => {
+    if (!targets.length) { toast.warn('没有可导出的脚本'); return }
+    if (targets.length === 1) {
+      const sc = targets[0]
+      downloadText(`${safeFileName(sc.name)}.sql`, buildScriptSql(sc))
+      toast.success(`已导出「${sc.name}」`)
+      return
+    }
+    if (IS_DESKTOP) {
+      const files = targets.map((sc) => ({ name: `${safeFileName(sc.name)}.sql`, content: buildScriptSql(sc) }))
+      const r = await window.desktopBridge?.invokeApp?.('exportTextFilesToDir', { files })
+      if (!r?.ok) { toast.error(r?.error?.message ?? '导出失败'); return }
+      const data = r.data as { canceled: boolean; dir?: string; written?: string[] } | undefined
+      if (data && !data.canceled) toast.success(`已导出 ${data.written?.length ?? files.length} 个脚本到 ${data.dir}`)
+      return
+    }
+    targets.forEach((sc) => downloadText(`${safeFileName(sc.name)}.sql`, buildScriptSql(sc)))
+    toast.success(`已触发下载 ${targets.length} 个脚本（浏览器下载目录）`)
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ display: 'flex', gap: 6, marginBottom: 7 }}>
@@ -58,6 +100,12 @@ export function ScriptsPanel() {
           className="btn sm icon" title="新建空脚本标签页"
           onClick={() => openQueryTab({ title: '新脚本' })}
         ><IconPlus /></button>
+        {scripts.length > 0 && (
+          <button
+            className="btn sm icon" title="导出全部脚本到指定目录"
+            onClick={() => void exportScripts(scripts)}
+          ><IconDownload /></button>
+        )}
       </div>
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         {!list.length && (
@@ -68,7 +116,7 @@ export function ScriptsPanel() {
           </div>
         )}
         {list.map((sc) => (
-          <div key={sc.id} className="script-item" onClick={() => openScript(sc.id)}>
+          <div key={sc.id} className="script-item" title="双击打开脚本" onDoubleClick={() => openScript(sc.id)}>
             <div className="name">
               <IconDoc />
               {editingId === sc.id ? (
@@ -87,6 +135,7 @@ export function ScriptsPanel() {
               <span className="ops" onClick={(e) => e.stopPropagation()}>
                 <button className="icon-btn" title="重命名" onClick={() => { setEditingId(sc.id); setEditName(sc.name) }}><IconEdit /></button>
                 <button className="icon-btn" title="复制 SQL" onClick={() => { void copyText(sc.sql).then((ok) => ok ? toast.success('SQL 已复制') : toast.error('复制失败')) }}><IconCopy /></button>
+                <button className="icon-btn" title="导出为 .sql 文件" onClick={() => void exportScripts([sc])}><IconDownload /></button>
                 <button
                   className="icon-btn danger" title="删除"
                   onClick={() => { void confirmDialog({ title: '删除脚本', message: `确定删除「${sc.name}」吗？`, danger: true }).then((ok) => { if (ok) { deleteScript(sc.id); toast.success('已删除') } }) }}

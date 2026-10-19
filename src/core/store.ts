@@ -170,9 +170,16 @@ export const useStore = create<AppState>((set, get) => ({
   /* 连接管理 */
   upsertConnection: (c) => {
     set((st) => {
-      const exists = st.connections.some((x) => x.id === c.id)
+      const old = st.connections.find((x) => x.id === c.id)
+      if (old) {
+        // 适配器在构造时固化连接参数，参数有变必须销毁旧实例，
+        // 否则 ensureConnected 复用旧适配器，重连仍会使用旧地址
+        const sig = (x: ConnectionConfig) =>
+          [x.type, x.host, x.port, x.user, x.password, x.database, x.wsUrl].join('\u0000')
+        if (sig(old) !== sig(c)) void disposeAdapter(c.id)
+      }
       return {
-        connections: exists
+        connections: old
           ? st.connections.map((x) => (x.id === c.id ? c : x))
           : [...st.connections, c],
       }

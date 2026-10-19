@@ -1,6 +1,6 @@
 /* CodeMirror 6 SQL 编辑器封装 */
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
-import { Compartment, EditorState } from '@codemirror/state'
+import { Annotation, Compartment, EditorState } from '@codemirror/state'
 import {
   EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter,
   highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor,
@@ -48,6 +48,9 @@ const highlight = HighlightStyle.define([
 
 const schemaCpt = new Compartment()
 const readOnlyCpt = new Compartment()
+
+/** 程序性替换全文的标记（切换标签页同步内容用），带此标记的更新不触发 onChange */
+const externalSync = Annotation.define<boolean>()
 
 export const CodeMirrorEditor = forwardRef<EditorHandle, Props>(function CodeMirrorEditor(
   { value, onChange, schemaHint, onRun, readOnly = false, placeholder },
@@ -97,7 +100,10 @@ export const CodeMirrorEditor = forwardRef<EditorHandle, Props>(function CodeMir
         ]),
         syntaxHighlighting(highlight, { fallback: true }),
         EditorView.updateListener.of((u) => {
-          if (u.docChanged) cbs.current.onChange?.(u.state.doc.toString())
+          if (!u.docChanged) return
+          // 程序性替换（切换标签页同步内容）不算用户编辑，不触发 onChange
+          if (u.transactions.some((tr) => tr.annotation(externalSync) === true)) return
+          cbs.current.onChange?.(u.state.doc.toString())
         }),
         placeholder
           ? EditorView.theme({ '&.cm-editor.cm-empty::before': { color: 'var(--text-3)' } })
@@ -115,7 +121,10 @@ export const CodeMirrorEditor = forwardRef<EditorHandle, Props>(function CodeMir
     const v = view.current
     if (!v) return
     if (v.state.doc.toString() !== value) {
-      v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: value } })
+      v.dispatch({
+        changes: { from: 0, to: v.state.doc.length, insert: value },
+        annotations: externalSync.of(true),
+      })
     }
   }, [value])
 

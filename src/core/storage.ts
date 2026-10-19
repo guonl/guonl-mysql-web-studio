@@ -13,6 +13,11 @@ const PREFIX = 'mws.v1.'
 export const IS_EXTENSION =
   typeof location !== 'undefined' && location.protocol === 'chrome-extension:'
 
+/** 是否运行在桌面客户端（Electron 渲染进程，preload 注入了 window.desktopBridge） */
+export const IS_DESKTOP =
+  typeof window !== 'undefined' &&
+  !!(window as unknown as { desktopBridge?: unknown }).desktopBridge
+
 /** 默认桥接地址：Web 模式与页面同源；插件模式指向本机独立桥接器（npm run bridge，默认端口 5189） */
 export function defaultBridgeUrl(): string {
   return IS_EXTENSION

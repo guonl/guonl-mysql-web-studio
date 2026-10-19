@@ -3,6 +3,7 @@ import { getAdapter, registerAdapter, useStore } from './store'
 import type { ConnectionConfig, DriverAdapter, QueryTab, ResultSet } from './types'
 import { DemoAdapter } from '../adapters/demo'
 import { WsAdapter } from '../adapters/ws'
+import { IpcAdapter } from '../adapters/ipc'
 import { splitStatements, isReadOnlySql, isQueryStatement, hasTopLevelLimit, appendLimit } from './sql'
 import { uid, fmtDuration } from './utils'
 import { toast } from '../components/Toast'
@@ -18,7 +19,11 @@ export async function ensureConnected(cfg: ConnectionConfig): Promise<DriverAdap
   try {
     // 已有适配器则复用重连（connect 幂等）；否则新建
     const adapter: DriverAdapter = existed ?? (() => {
-      const a = cfg.type === 'demo' ? new DemoAdapter(cfg.database || 'shop') : new WsAdapter(cfg)
+      const a = cfg.type === 'demo'
+        ? new DemoAdapter(cfg.database || 'shop')
+        : cfg.type === 'desktop'
+          ? new IpcAdapter(cfg)
+          : new WsAdapter(cfg)
       registerAdapter(cfg.id, a)
       return a
     })()

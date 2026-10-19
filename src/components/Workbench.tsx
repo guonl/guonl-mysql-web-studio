@@ -9,6 +9,7 @@ import { CodeMirrorEditor, type EditorHandle } from './CodeMirrorEditor'
 import { ResultsPanel } from './ResultsPanel'
 import { Modal } from './Modal'
 import { openContextMenu } from './ContextMenu'
+import { saveConfirmDialog } from './ModalHost'
 import { toast } from './Toast'
 import {
   IconCopy, IconDownload, IconPlay, IconPlus, IconSave, IconTrash, IconWrench,
@@ -171,25 +172,54 @@ export function Workbench() {
     document.body.style.cursor = 'row-resize'
   }
 
+  /* ---------------- 关闭标签页：挂接脚本有未保存修改时先询问 ---------------- */
+  const requestCloseTabs = async (ids: string[]) => {
+    if (!ids.length) return
+    const st = useStore.getState()
+    const dirty = st.tabs.filter((t) => ids.includes(t.id) && t.savedScriptId && t.dirty)
+    if (!dirty.length) {
+      ids.forEach((id) => useStore.getState().closeTab(id))
+      return
+    }
+    const label = (t: QueryTab) => t.savedScriptName || t.title
+    const choice = await saveConfirmDialog({
+      title: '未保存的脚本修改',
+      message: dirty.length === 1
+        ? <>脚本「{label(dirty[0])}」已修改但尚未保存，关闭前要保存吗？</>
+        : <>有 {dirty.length} 个脚本标签页存在未保存的修改（{dirty.map((t) => `「${label(t)}」`).join('、')}），关闭前要保存吗？</>,
+      saveLabel: '保存并关闭',
+    })
+    if (choice === 'cancel') return
+    if (choice === 'save') {
+      for (const t of dirty) {
+        // saveScript 会把挂接状态写到当前活动标签页，先激活再保存
+        useStore.getState().setActiveTab(t.id)
+        useStore.getState().saveScript({ id: t.savedScriptId!, name: label(t), sql: t.sql, connId: t.connId, schema: t.schema })
+      }
+      toast.success(dirty.length > 1 ? `已保存 ${dirty.length} 个脚本` : '脚本已保存')
+    }
+    ids.forEach((id) => useStore.getState().closeTab(id))
+  }
+
   /* ---------------- 标签页右键菜单 ---------------- */
   const tabMenu = (t: QueryTab) => [
     { label: '重命名', icon: <IconWrench />, onClick: () => setEditingId(t.id) },
     { label: '复制 SQL', icon: <IconCopy />, onClick: () => { void copyText(t.sql).then((ok) => ok && toast.success('已复制 SQL')) } },
     { sep: true },
-    { label: '关闭', onClick: () => useStore.getState().closeTab(t.id) },
+    { label: '关闭', onClick: () => void requestCloseTabs([t.id]) },
     {
       label: '关闭其他标签页', disabled: tabs.length <= 1,
-      onClick: () => tabs.filter((x) => x.id !== t.id).forEach((x) => useStore.getState().closeTab(x.id)),
+      onClick: () => void requestCloseTabs(tabs.filter((x) => x.id !== t.id).map((x) => x.id)),
     },
     {
       label: '关闭右侧标签页', disabled: tabs.findIndex((x) => x.id === t.id) >= tabs.length - 1,
       onClick: () => {
         const idx = tabs.findIndex((x) => x.id === t.id)
-        tabs.slice(idx + 1).forEach((x) => useStore.getState().closeTab(x.id))
+        void requestCloseTabs(tabs.slice(idx + 1).map((x) => x.id))
       },
     },
     { sep: true },
-    { label: '关闭全部', danger: true, onClick: () => [...tabs].forEach((x) => useStore.getState().closeTab(x.id)) },
+    { label: '关闭全部', danger: true, onClick: () => void requestCloseTabs(tabs.map((x) => x.id)) },
   ]
 
   return (
@@ -203,7 +233,7 @@ export function Workbench() {
             onClick={() => useStore.getState().setActiveTab(t.id)}
             onDoubleClick={() => setEditingId(t.id)}
             onContextMenu={(e) => openContextMenu(e, tabMenu(t))}
-            onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); useStore.getState().closeTab(t.id) } }}
+            onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); void requestCloseTabs([t.id]) } }}
             title={t.savedScriptName ? `脚本：${t.savedScriptName}（双击重命名）` : '双击重命名'}
           >
             {editingId === t.id ? (
@@ -224,7 +254,7 @@ export function Workbench() {
                 {t.dirty && <span className="dirty" title="脚本有未保存的修改">●</span>}
                 <span
                   className="close" title="关闭 (中键点击同样生效)"
-                  onClick={(e) => { e.stopPropagation(); useStore.getState().closeTab(t.id) }}
+                  onClick={(e) => { e.stopPropagation(); void requestCloseTabs([t.id]) }}
                 >✕</span>
               </>
             )}

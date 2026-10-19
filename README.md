@@ -1,6 +1,6 @@
 # MySQL Web Studio
 
-纯前端的 MySQL 客户端 —— 在浏览器中管理连接、浏览库表、执行 SQL、导出数据，体验对标桌面客户端（如 Navicat / DataGrip 的核心常用功能），并内置 **AI 助手（SQL AI）**：自然语言对话查库、自动生成并执行 SQL。支持 **Web 方式** 直接使用，也可 **打包为 Chrome 插件（MV3）** 安装到浏览器。
+纯前端的 MySQL 客户端 —— 管理连接、浏览库表、执行 SQL、导出数据，体验对标桌面客户端（如 Navicat / DataGrip 的核心常用功能），并内置 **AI 助手（SQL AI）**：自然语言对话查库、自动生成并执行 SQL。提供 **三种使用形态**：**Web** 直接使用、**Chrome 插件（MV3）** 安装到浏览器、**Electron 桌面客户端**（Mac / Windows / Linux，主进程 mysql2 直连 MySQL，无需任何桥接器）。
 
 **内置演示库**：项目自带一个完全离线的示例服务器（3 个 Schema、11 张表 + 2 个视图，纯前端迷你 SQL 引擎模拟），克隆下来打开页面即可体验，无需任何 MySQL 环境。
 
@@ -20,7 +20,8 @@
   - 表数据 / 查询结果导出 CSV
 - **界面体验**：9 套主流主题配色（暗色：默认 / One Dark Pro / Dracula / Tokyo Night / Monokai / Nord；亮色：默认 / GitHub Light / Solarized Light），顶栏调色板按钮弹出带色卡预览的主题菜单，选择即生效并持久化、刷新无闪烁；侧边栏可**整体收起为窄条**（点击还原原宽度）；DDL/SQL 弹窗支持**拖拽调整大小**，弹窗可相互叠加（如导出弹窗上叠 SQL 预览）；结果区高度可拖拽；已禁用触控板双指左右滑的前进/后退手势，避免误触导航导致连接中断
 - **AI 助手（SQL AI）**：顶栏一键唤起的右侧对话面板（宽度可拖拽、多会话管理），浏览器端 Function Calling Agent——模型由浏览器直连 OpenAI 兼容端点（预设 DeepSeek / OpenAI / Moonshot / 通义千问 / 豆包 / 智谱 / Ollama / 自定义），数据库操作全部通过本地工具执行：自动注入当前连接 / Schema 上下文，`@表名` 附带真实 DDL；SQL 风险四级分级（L0 只读自动执行并附加 LIMIT，数据 / 结构 / 服务器级变更必须人工确认）；SQL 代码块一键复制 / 插入编辑器 / 直接运行；`/explain` `/optimize` `/tables` `/fix` 斜杠指令；模型配置与对话记录仅存本机
-- **双形态**：Web 模式开箱即用；`npm run build:ext` 可打包为 Chrome 插件（MV3），数据存 `chrome.storage.local`
+- **桌面客户端（Electron）**：主进程内置 mysql2 直连 MySQL（进程内 IPC，零桥接器）；原生菜单「打开 SQL 文件 / 导出当前 SQL」走系统对话框，界面内所有下载统一落系统保存对话框；窗口尺寸 / 位置记忆（含多显示器可见性校正）；外链走系统浏览器；错误日志落 `userData/logs`（超 2MB 自动轮换，菜单可直达）；内置自动更新（electron-updater，默认 GitHub Releases 源，`MWS_UPDATE_URL` 可接自建静态源）；全程安全沙箱（contextIsolation + sandbox，渲染进程零 Node 能力，IPC 白名单）并自动补齐 AI 端点 CORS
+- **三形态**：Web 模式开箱即用；`npm run build:ext` 打包 Chrome 插件（MV3，数据存 `chrome.storage.local`）；`npm run dist:mac` / `dist:win` / `dist:linux` 打包桌面安装包
 
 ## 产品截图
 
@@ -79,6 +80,18 @@ npm run bridge      # 另开终端，启动独立桥接器（默认端口 5189�
 
 Chrome 打开 `chrome://extensions` → 开启「**开发者模式**」→「**加载已解压的扩展程序**」→ 选择 `dist/` 目录，点击工具栏插件图标即可使用。详见 [使用手册 · Chrome 插件模式](docs/usage.md#11-chrome-插件模式)。
 
+### 桌面客户端方式
+
+```bash
+npm run dev:desktop   # 开发调试：起 Vite dev server → 就绪后自动拉起 Electron 窗口（HMR 生效）
+
+npm run dist:mac      # 打包 mac dmg + zip（arm64 / x64）
+npm run dist:win      # 打包 Windows nsis 安装器（x64）
+npm run dist:linux    # 打包 Linux AppImage + deb（x64）
+```
+
+安装包输出到 `release/`，双击即用，**无需 Node 环境与任何桥接器**（主进程 mysql2 直连）。未签名安装包首次打开需手动放行（mac 右键打开 / win SmartScreen「仍要运行」）；正式分发签名 / 公证用 `npm run dist:mac:signed`（需 Apple 开发者账号三件套环境变量），Windows 设 `CSC_LINK` 环境变量后 `dist:win` 自动签名。详见 [使用手册 · 桌面客户端模式](docs/usage.md#12-桌面客户端模式)。
+
 ## 架构概览
 
 ```mermaid
@@ -101,7 +114,15 @@ flowchart LR
 - 桥接器：核心实现抽离在 `bridge/bridge-core.mjs`，两个入口共用 —— Web 模式经 Vite 插件挂在 dev server 上；插件模式经 `npm run bridge` 以独立进程运行（默认端口 5189）。收到 `{id, op, args}` JSON 后用 `mysql2` 执行，再以 `{id, ok, data}` 回传
 - 协议只有三个 op：`connect` / `query` / `close`
 
-详细设计见 [docs/architecture.md](docs/architecture.md)。
+**桌面形态**下数据通路更短：Electron 主进程即 Node 环境，`electron/mysql-service.mjs` 复用同一套 `bridge-core.mjs`，渲染层经 `IpcAdapter` 走进程内 IPC，**不再经过任何 WebSocket 桥**：
+
+| 形态 | 数据通道 | 持久化 | 适用场景 |
+| --- | --- | --- | --- |
+| Web | WsAdapter → 同源 WS 桥 | localStorage | 团队内网 / 临时使用 |
+| Chrome 插件 | WsAdapter → 独立桥 `:5189` | chrome.storage.local | 浏览器常驻 |
+| 桌面客户端 | IpcAdapter → 进程内 IPC → mysql2 | localStorage（app:// 源）+ userData | 日常主力工具 |
+
+详细设计见 [docs/architecture.md](docs/architecture.md)，桌面化方案见 [docs/desktop-plan.md](docs/desktop-plan.md)。
 
 ## 文档
 
@@ -109,6 +130,7 @@ flowchart LR
 | --- | --- |
 | [使用手册](docs/usage.md) | 连接管理、库表浏览、SQL 执行、AI 助手、脚本与历史、导出、快捷键、FAQ |
 | [架构说明](docs/architecture.md) | 桥接器原理、WS JSON 协议、前端结构、AI 助手模块、二次开发指南 |
+| [桌面客户端方案](docs/desktop-plan.md) | Electron 桌面化：技术选型、目标架构、分期实施（P1 骨架 → P4 自动更新与签名） |
 | [AI 助手规划](docs/ai/README.md) | SQL AI（Copilot）产品规划：PRD、交互设计、技术方案 |
 | [项目推广文章](docs/articles/why-i-built-mysql-web-studio.md) | 为什么要造这个轮子、产品定位与使用心得 |
 | [AI 功能发布博客](docs/articles/mysql-web-studio-ai-assistant.md) | AI 助手（SQL AI）设计思路：浏览器端 Function Calling Agent、风险分级与确认矩阵 |
@@ -120,6 +142,7 @@ flowchart LR
 1. **桥接器无鉴权**：任何能访问 dev server 端口的页面都可以通过它发起 MySQL 连接
 2. **密码存储**：勾选「记住密码」后，密码以**明文**保存在本机（Web 模式 `localStorage` / 插件模式 `chrome.storage.local`）；不勾选则仅本次会话内存有效
 3. **生产环境 / 插件模式**：构建产物是纯静态前端，不包含桥接器——Web 部署或插件使用均需自行运行桥接器（`npm run bridge`）；公网桥接请自行实现鉴权并使用 `wss://`
+4. **桌面客户端**：渲染进程全程 sandbox（零 Node 能力），数据库访问仅能经主进程白名单 IPC（`mysql:op` / `app:op`）执行；API Key 与 Web 形态一致明文存于本机。未签名安装包首次打开需手动放行（mac 右键打开 / win SmartScreen「仍要运行」），正式分发建议签名 + 公证
 
 ## 技术栈
 
@@ -129,8 +152,9 @@ flowchart LR
 | 前端框架 | React 18 + TypeScript 5.6（strict） |
 | 状态管理 | Zustand 4（localStorage 持久化） |
 | SQL 编辑器 | CodeMirror 6（`@codemirror/lang-sql`） |
-| MySQL 驱动 | mysql2（运行在桥接器 / Node 侧） |
+| MySQL 驱动 | mysql2（运行在桥接器 / 主进程 Node 侧） |
 | 通信 | 原生 WebSocket + JSON 协议 |
+| 桌面壳 | Electron 44（contextIsolation + sandbox）+ electron-builder + electron-updater |
 
 ## 目录结构
 
@@ -140,33 +164,48 @@ flowchart LR
 │   └── bridge-core.mjs                # 桥接器共用核心（WS 会话、mysql2、COMMENT 补全）
 ├── plugins/
 │   └── vite-plugin-mysql-bridge.mjs   # Web 模式桥接器入口（挂 Vite dev server）
+├── electron/                          # 桌面客户端主进程（纯 ESM）
+│   ├── main.mjs                       # 主进程入口（窗口 / 菜单 / IPC / 日志 / 自动更新接线）
+│   ├── mysql-service.mjs              # 主进程 MySQL 服务（复用 bridge-core.mjs，进程内执行）
+│   ├── preload.cjs                    # sandbox 强制 CJS 预加载（contextBridge 暴露最小 API）
+│   └── updater.mjs                    # electron-updater 封装（启动静默检查 / 事件转发）
+├── electron-builder.yml               # 打包配置（mac dmg+zip / win nsis / linux AppImage+deb）
+├── electron-builder.signed.yml        # mac 签名 + 公证构建配置（npm run dist:mac:signed）
+├── build/                             # 打包资源（icon.png、entitlements.mac.plist）
 ├── scripts/
 │   ├── bridge-server.mjs              # 插件模式独立桥接器入口（npm run bridge）
-│   └── build-ext.mjs                  # 插件打包脚本（npm run build:ext）
+│   ├── build-ext.mjs                  # 插件打包脚本（npm run build:ext）
+│   ├── desktop-dev.mjs                # 桌面开发编排：Vite 就绪后拉起 Electron（npm run dev:desktop）
+│   └── make-icon.swift                # 生成 build/icon.png 的图标脚本
 ├── extension/
 │   ├── manifest.json                  # Chrome MV3 清单（storage 权限）
 │   └── sw.js                          # Service Worker（图标点击打开主界面）
 ├── src/
 │   ├── adapters/
 │   │   ├── demo/                      # 内置演示库（离线迷你 SQL 引擎 + 示例数据）
+│   │   ├── ipc/                       # 桌面端 IpcAdapter（进程内 IPC，implements DriverAdapter）
 │   │   └── ws/                        # 浏览器端 WS JSON 协议客户端与适配器
 │   ├── ai/                            # AI 助手核心（Agent 循环、五工具、SQL 风险守卫）
 │   ├── components/                    # UI 组件（侧栏、工作台、弹窗、结果面板、AI 助手面板等）
 │   ├── core/
 │   │   ├── store.ts                   # Zustand 全局状态 + 本地持久化
-│   │   ├── storage.ts                 # 存储适配（localStorage / chrome.storage 双模式）
+│   │   ├── storage.ts                 # 存储适配与运行环境探测（Web / 插件 / 桌面）
+│   │   ├── desktop.ts                 # 桌面端菜单动作订阅与文件能力封装
+│   │   ├── utils.ts                   # 工具函数（格式化、导出、CSV 等；桌面端走系统对话框）
+│   │   ├── connOps.ts                 # 连接操作（连通性测试 / Schema 列表等公共逻辑）
+│   │   ├── sql.ts                     # SQL 解析与格式化辅助
 │   │   └── types.ts                   # 核心类型定义
-│   ├── lib/                           # 工具函数（格式化、导出、CSV 等）
-│   └── styles/global.css              # 全局样式（9 套主题变量组驱动）
+│   └── styles/                        # global.css + ai.css（9 套主题变量组驱动）
 ├── public/
 │   └── theme-boot.js                  # 首帧前恢复持久化主题（防亮色主题刷新闪暗）
 ├── docs/
 │   ├── usage.md                       # 使用手册
 │   ├── architecture.md                # 架构说明
+│   ├── desktop-plan.md                # 桌面客户端方案（P1 → P4 分期实施）
 │   ├── ai/                            # AI 助手规划文档（PRD / 设计 / 技术方案）
 │   ├── articles/                      # 推广文章
 │   └── images/                        # 产品截图
-└── vite.config.mts
+└── vite.config.ts
 ```
 
 ## 作者与版权

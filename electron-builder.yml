@@ -1,0 +1,54 @@
+# electron-builder 配置（P2 打包分发）
+# 产物：mac dmg+zip（arm64/x64）· win nsis（x64）· linux AppImage+deb（x64）
+# 约定：渲染产物 dist/、主进程 electron/、应用图标 build/icon.png（自动转 icns/ico/png）
+appId: com.guonl.mysql-web-studio
+productName: MySQL Web Studio
+directories:
+  buildResources: build
+  output: release
+files:
+  - dist/**
+  - electron/**
+  - bridge/**
+  - '!**/node_modules/**/.cache/**'
+asar: true
+
+# 自动更新源（electron-updater）：构建时据此生成 app-update.yml 随包分发。
+# 本地构建未设 GH_TOKEN 时不会真正上传，仅产出安装包。
+# 自建静态源可在运行时用环境变量 MWS_UPDATE_URL 覆盖（generic provider）。
+publish:
+  provider: github
+  owner: guonl
+  repo: guonl-mysql-web-studio
+
+mac:
+  category: public.app-category.developerTools
+  # 开发期不签名：CI 与本机均无 Developer ID 证书；正式分发用
+  # 「npm run dist:mac:signed」（electron-builder.signed.yml，含公证，见方案 P4）
+  identity: null
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  # Windows 签名无需改配置：设 CSC_LINK（.pfx 路径或 base64）+ CSC_KEY_PASSWORD
+  # 环境变量后 electron-builder 自动签名；EV 证书改用 certificateSubjectName（见方案 P4）
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+
+linux:
+  category: Development
+  maintainer: guonl
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]

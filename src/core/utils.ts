@@ -1,4 +1,5 @@
 /* 通用小工具 */
+import { IS_DESKTOP } from './storage'
 
 let seq = 0
 export function uid(prefix = 'id'): string {
@@ -63,8 +64,16 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/** 触发浏览器下载 */
+/** 触发浏览器下载；桌面客户端改走系统保存对话框（主进程写盘），其余形态不变 */
 export function downloadText(filename: string, content: string, mime = 'text/plain;charset=utf-8') {
+  if (IS_DESKTOP) {
+    const safeName = filename.replace(/[\\/:*?"<>|]/g, '_')
+    void window.desktopBridge?.invokeApp?.('saveTextFile', { defaultPath: safeName, content })
+      .then((r) => {
+        if (r && !r.ok) console.warn('[desktop] 保存文件失败:', r.error?.message)
+      })
+    return
+  }
   const blob = new Blob([content], { type: mime })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

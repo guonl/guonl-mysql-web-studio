@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Electron 渲染层 JIT：hardened runtime 必需 -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- 当前依赖（mysql2/ws 等）均为纯 JS，无需更多特权；
+         后续引入原生模块时按需追加 allow-dyld-environment-variables / disable-library-validation -->
+  </dict>
+</plist>

@@ -1,11 +1,11 @@
 /* 核心领域类型 */
 
-export type ConnectionType = 'demo' | 'ws'
+export type ConnectionType = 'demo' | 'ws' | 'desktop'
 
 export interface ConnectionConfig {
   id: string
   name: string // 自定义命名
-  type: ConnectionType // demo=内置演示库, ws=经 WebSocket 桥接的真实 MySQL
+  type: ConnectionType // demo=内置演示库, ws=经 WebSocket 桥接的真实 MySQL, desktop=桌面客户端直连
   host?: string
   port?: number
   user?: string

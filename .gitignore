@@ -2,3 +2,4 @@
 /node_modules/
 .dev.pid
 dev.log
+/release/

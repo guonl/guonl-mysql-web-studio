@@ -1,0 +1,67 @@
+# 签名 + 公证构建配置（正式分发用，P4）
+#
+# 前置（一次性）：
+#   mac：钥匙串导入「Developer ID Application」证书；并导出环境变量
+#         APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID（公证必需，需联网数分钟）
+#         如钥匙串存在多张证书，可再加 CSC_NAME 指定名称
+#   win：无需本文件——electron-builder 读取 CSC_LINK（.pfx 路径或 base64）+
+#         CSC_KEY_PASSWORD 即自动签名；EV 证书（无私钥文件）改在 win 节配
+#         signtoolOptions.certificateSubjectName
+#   linux：无需签名
+#
+# 用法：
+#   mac：APPLE_ID=... APPLE_APP_SPECIFIC_PASSWORD=... APPLE_TEAM_ID=... npm run dist:mac:signed
+#   win：CSC_LINK=... CSC_KEY_PASSWORD=... npm run dist:win（默认配置即可）
+#
+# 自动更新（electron-updater）：mac 正式分发必须签名 + 公证，否则 Squirrel 更新
+# 弹校验告警；win/linux 未签名也能更新（安装包会有 SmartScreen 提示）。
+appId: com.guonl.mysql-web-studio
+productName: MySQL Web Studio
+directories:
+  buildResources: build
+  output: release
+files:
+  - dist/**
+  - electron/**
+  - bridge/**
+  - '!**/node_modules/**/.cache/**'
+asar: true
+
+publish:
+  provider: github
+  owner: guonl
+  repo: guonl-mysql-web-studio
+
+mac:
+  category: public.app-category.developerTools
+  # identity 省略 → 从钥匙串自动发现 Developer ID Application 证书（CSC_NAME 可指定）
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  # CSC_LINK / CSC_KEY_PASSWORD 环境变量驱动签名
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+
+linux:
+  category: Development
+  maintainer: guonl
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]

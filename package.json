@@ -9,9 +9,18 @@
     "url": "git+https://github.com/guonl/guonl-mysql-web-studio.git"
   },
   "type": "module",
+  "main": "electron/main.mjs",
   "scripts": {
     "dev": "vite",
+    "dev:desktop": "node scripts/desktop-dev.mjs",
+    "start:desktop": "npm run build && electron .",
     "build": "tsc -b && vite build",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:dir": "npm run build && electron-builder --dir --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:mac:signed": "npm run build && electron-builder --mac --config electron-builder.signed.yml --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:linux": "npm run build && electron-builder --linux --publish never",
     "preview": "vite preview",
     "bridge": "node scripts/bridge-server.mjs",
     "build:ext": "npm run build && node scripts/build-ext.mjs"
@@ -25,9 +34,12 @@
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.36.5",
     "dompurify": "^3.4.16",
+    "electron-updater": "^6.8.9",
     "marked": "^18.0.14",
+    "mysql2": "^3.24.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "ws": "^8.21.3",
     "zustand": "^4.5.5"
   },
   "devDependencies": {
@@ -35,9 +47,9 @@
     "@types/react-dom": "^18.3.1",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "mysql2": "^3.24.4",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
     "typescript": "~5.6.3",
-    "vite": "^5.4.11",
-    "ws": "^8.21.3"
+    "vite": "^5.4.11"
   }
 }

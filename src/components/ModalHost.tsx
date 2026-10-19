@@ -22,6 +22,31 @@ export function confirmDialog(opts: { title: string; message: ReactNode; danger?
   return new Promise((resolve) => confirmFn?.({ ...opts, resolve }))
 }
 
+/* ---------------- 未保存修改三选框：保存 / 不保存 / 取消 ---------------- */
+export type SaveChoice = 'save' | 'discard' | 'cancel'
+interface SaveConfirmState {
+  title: string
+  message: ReactNode
+  saveLabel: string
+  discardLabel: string
+  resolve: (c: SaveChoice) => void
+}
+let saveConfirmFn: ((s: SaveConfirmState) => void) | null = null
+export function saveConfirmDialog(opts: {
+  title: string
+  message: ReactNode
+  saveLabel?: string
+  discardLabel?: string
+}): Promise<SaveChoice> {
+  return new Promise((resolve) => saveConfirmFn?.({
+    title: opts.title,
+    message: opts.message,
+    saveLabel: opts.saveLabel ?? '保存',
+    discardLabel: opts.discardLabel ?? '不保存',
+    resolve,
+  }))
+}
+
 /* ---------------- 连接编辑弹窗 ---------------- */
 let connModalFn: ((initial?: ConnectionConfig) => void) | null = null
 export function openConnModal(initial?: ConnectionConfig) { connModalFn?.(initial) }
@@ -57,6 +82,7 @@ export async function exportTableCsv(connId: string, schema: string, table: stri
 export function ModalHost() {
   const [sqlState, setSqlState] = useState<SqlModalState | null>(null)
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null)
+  const [saveConfirmState, setSaveConfirmState] = useState<SaveConfirmState | null>(null)
   const [connInitial, setConnInitial] = useState<ConnectionConfig | undefined>(undefined)
   const [connOpen, setConnOpen] = useState(false)
   const [exportTarget, setExportTarget] = useState<{ connId: string; schema: string; table: string } | null>(null)
@@ -64,6 +90,7 @@ export function ModalHost() {
 
   openSqlModalFn = setSqlState
   confirmFn = (s) => setConfirmState(s)
+  saveConfirmFn = setSaveConfirmState
   connModalFn = (initial) => { setConnInitial(initial); setConnOpen(true) }
   exportFn = setExportTarget
   schemaModalFn = setSchemaConnId
@@ -89,6 +116,22 @@ export function ModalHost() {
           }
         >
           <div style={{ fontSize: 13, lineHeight: 1.7 }}>{confirmState.message}</div>
+        </Modal>
+      )}
+      {saveConfirmState && (
+        <Modal
+          title={saveConfirmState.title}
+          width={420}
+          onClose={() => { saveConfirmState.resolve('cancel'); setSaveConfirmState(null) }}
+          foot={
+            <div className="confirm-foot">
+              <button className="btn" onClick={() => { saveConfirmState.resolve('cancel'); setSaveConfirmState(null) }}>取消</button>
+              <button className="btn" onClick={() => { saveConfirmState.resolve('discard'); setSaveConfirmState(null) }}>{saveConfirmState.discardLabel}</button>
+              <button className="btn primary" onClick={() => { saveConfirmState.resolve('save'); setSaveConfirmState(null) }}>{saveConfirmState.saveLabel}</button>
+            </div>
+          }
+        >
+          <div style={{ fontSize: 13, lineHeight: 1.7 }}>{saveConfirmState.message}</div>
         </Modal>
       )}
       {connOpen && (
