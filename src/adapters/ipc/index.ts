@@ -37,7 +37,8 @@ const CONNECT_TIMEOUT = 15_000
 const QUERY_TIMEOUT = 60_000
 
 /** 会话级断开的错误特征（主进程 mysql2 连接 fatal 被销毁后 rec 不存在） */
-const SESSION_LOST = /尚未连接数据库/
+/* 主进程连接失效（空闲半开连接 read ETIMEDOUT 等）触发自愈重连 */
+const SESSION_LOST = /尚未连接数据库|read ETIMEDOUT|ECONNRESET|EPIPE|PROTOCOL_CONNECTION_LOST|connection lost/i
 
 /** 标识符加反引号并转义 */
 const qi = (s: string) => '`' + s.replace(/`/g, '``') + '`'

@@ -9,7 +9,10 @@ import { MysqlClient } from './client'
 const qi = (s: string) => '`' + s.replace(/`/g, '``') + '`'
 
 /** 会话级断开的错误特征（WS 会话关闭 / 桥接端 mysql2 连接被销毁后 conn 为空） */
-const SESSION_LOST = /尚未连接数据库|会话已断开|桥接会话未就绪/
+/* 会话/连接失效：触发自愈（重连后重试原查询）。
+   「尚未连接数据库」= 桥接侧连接已丢；read ETIMEDOUT / ECONNRESET / EPIPE /
+   PROTOCOL_CONNECTION_LOST = 空闲后底层 MySQL 连接被服务器/NAT 掐断的半开连接 */
+const SESSION_LOST = /尚未连接数据库|会话已断开|桥接会话未就绪|read ETIMEDOUT|ECONNRESET|EPIPE|PROTOCOL_CONNECTION_LOST|connection lost/i
 
 export class WsAdapter implements DriverAdapter {
   kind = 'ws' as const

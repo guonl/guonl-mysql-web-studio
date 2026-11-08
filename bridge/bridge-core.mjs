@@ -127,10 +127,27 @@ export async function createMysqlConn({ host = '127.0.0.1', port = 3306, user = 
     charset: 'utf8mb4',
     dateStrings: true, // 日期按字符串返回，避免时区歧义
     rowsAsArray: true, // 与前端 ExecResult.rows: unknown[][] 对齐
+    /* TCP keepalive：空闲一段时间后中间 NAT/防火墙会悄悄丢弃映射，
+       下一次查询写进半开连接只能等 read ETIMEDOUT；keepalive 维持链路活性 */
+    enableKeepalive: true,
+    keepaliveInitialDelay: 30_000,
   })
   const [vrows] = await conn.query('SELECT VERSION()')
   const serverVersion = Array.isArray(vrows?.[0]) ? String(vrows[0][0]) : ''
   return { conn, serverVersion }
+}
+
+/** 连接已死亡（空闲被服务器/NAT 掐断、进程崩溃等）判定；WS 桥与桌面端共用 */
+export function isDeadConnError(e) {
+  const code = String(e?.code ?? '')
+  return !!e?.fatal
+    || code === 'PROTOCOL_CONNECTION_LOST' || code === 'ECONNRESET' || code === 'EPIPE' || code === 'ETIMEDOUT'
+    || /read ETIMEDOUT|connection lost/i.test(String(e?.message ?? ''))
+}
+
+/** 只读语句判定：连接失效自动重连后，仅对只读语句透明重试（写语句无法确认是否已在服务器执行过） */
+function isReadOnlySql(sql) {
+  return /^\s*(SELECT|SHOW|DESC|DESCRIBE|EXPLAIN|WITH)\b/i.test(sql)
 }
 
 /** 在既有连接上执行单条 SQL，整理为前端 ExecResult 形状（WS 桥与桌面端共用） */
@@ -156,10 +173,33 @@ export async function handleSession(ws) {
   let conn = null
   let serverVersion = ''
   let closed = false
+  let lastOpts = null // 上次成功连接的参数（连接失效自动重连用）
 
   const send = (obj) => {
     if (!closed && ws.readyState === ws.OPEN) {
       ws.send(JSON.stringify(obj))
+    }
+  }
+
+  /** 连接失效时自动重连：只读语句换新连接重试一次（对用户无感）；
+      写语句只重连不重试——无法确认是否已在服务器执行过，让用户显式重发 */
+  async function execOnSession(sql) {
+    if (!conn) throw Object.assign(new Error('尚未连接数据库'), { code: 0 })
+    try {
+      return await execQueryOnConn(conn, sql)
+    } catch (e) {
+      if (!isDeadConnError(e) || !lastOpts) throw e
+      log(`连接已失效（${e.code || e.message}），自动重连…`)
+      try { conn.destroy() } catch { /* noop */ }
+      conn = null
+      const created = await createMysqlConn(lastOpts)
+      conn = created.conn
+      serverVersion = created.serverVersion
+      log(`已重连（server ${serverVersion}）`)
+      if (isReadOnlySql(sql)) {
+        return await execQueryOnConn(conn, sql)
+      }
+      throw Object.assign(new Error('连接已失效，已自动重连成功；写操作无法确认此前是否已执行，请重新执行本条 SQL'), { code: 0 })
     }
   }
 
@@ -179,7 +219,8 @@ export async function handleSession(ws) {
           throw Object.assign(new Error(`目标 ${host} 不在 MYSQL_BRIDGE_ALLOW 白名单中`), { code: 0 })
         }
         log(`连接 ${user}@${host}:${port}${database ? '/' + database : ''}`)
-        const created = await createMysqlConn({ host, port, user, password, database })
+        lastOpts = { host, port, user, password, database }
+        const created = await createMysqlConn(lastOpts)
         conn = created.conn
         serverVersion = created.serverVersion
         log(`已连接 ${host}:${port}（server ${serverVersion}）`)
@@ -188,10 +229,9 @@ export async function handleSession(ws) {
       }
 
       if (op === 'query') {
-        if (!conn) throw Object.assign(new Error('尚未连接数据库'), { code: 0 })
         const sql = String(args?.sql ?? '')
         if (!sql.trim()) throw Object.assign(new Error('SQL 为空'), { code: 0 })
-        send({ id, ok: true, data: await execQueryOnConn(conn, sql) })
+        send({ id, ok: true, data: await execOnSession(sql) })
         return
       }
 
