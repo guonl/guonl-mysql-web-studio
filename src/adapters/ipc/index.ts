@@ -94,6 +94,9 @@ export class IpcAdapter implements DriverAdapter {
         '连接',
         CONNECT_TIMEOUT,
       )
+      /* 重连时主进程会按 cfg.database 重建连接：同步本地缓存，
+         避免旧值让后续 execute 误判「无需切库」 */
+      this.currentSchema = this.cfg.database
       return { serverVersion: res.serverVersion }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -117,7 +120,19 @@ export class IpcAdapter implements DriverAdapter {
       /* 切库由主进程在执行前完成（USE），仅在目标库变化时下发，减少往返 */
       const switchTo = schema && schema !== this.currentSchema ? schema : undefined
       if (switchTo) this.currentSchema = schema
-      return this.call<ExecResult>('query', { connId: this.cfg.id, sql, schema: switchTo }, '查询')
+      try {
+        return await this.call<ExecResult>('query', { connId: this.cfg.id, sql, schema: switchTo }, '查询')
+      } catch (e) {
+        /* 自愈：主进程连接被重建 / 用户 SQL 手动 USE 等导致本地缓存与服务端默认库不一致时，
+           切库被跳过会报 1046（No database selected）。此时强制带 schema 重发一次（主进程必执行 USE） */
+        const err = e as { code?: number | string; message?: string }
+        const noDb = err?.code === 1046 || /no database selected/i.test(err?.message ?? '')
+        if (noDb && schema) {
+          this.currentSchema = schema
+          return this.call<ExecResult>('query', { connId: this.cfg.id, sql, schema }, '查询')
+        }
+        throw e
+      }
     })
   }
 

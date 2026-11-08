@@ -15,7 +15,7 @@ const OVERSCAN = 10
 
 /* 列宽：按表头内容估算并封顶，超长内容由单元格省略号截断（悬停 title 查看完整值） */
 function colWidth(c: ColumnMeta): number {
-  const nameW = c.name.length * 7.5 + 66 // 列名 + 类型标签 + PK 徽标 + 内边距
+  const nameW = c.name.length * 7.5 + 44 // 列名 + PK 徽标 + 内边距
   const commentW = (c.comment ?? '').length * 6.6 + 26
   return Math.min(320, Math.max(120, Math.round(Math.max(nameW, commentW))))
 }
@@ -308,7 +308,7 @@ function ResultView({ tabId, rs }: { tabId: string; rs: ResultSet }) {
       const adapter = await ensureConnected(cfg)
       for (const u of upd) {
         try {
-          await adapter.execute(u.sql, rs.schema)
+          await adapter.execute(u.sql, rs.schema ?? cfg.database)
           done.push(u)
         } catch (e) {
           failMsg = e instanceof Error ? e.message : String(e)
@@ -500,7 +500,6 @@ function ResultGrid({ rs, editing, edits, pkSet, locked, onCellEdit }: {
                 <div className="th-inner">
                   <div className="col-name">
                     {c.name}
-                    <span className="type-tag">{shortType(c.type)}</span>
                     {c.key === 'PRI' && <span className="badge pri">PK</span>}
                   </div>
                   <div className={`col-comment ${c.comment ? 'has' : ''}`}>{c.comment || '\u00a0'}</div>
@@ -607,11 +606,6 @@ function CellEditor({ initial, onCommit, onCancel }: {
       onBlur={() => onCommit(val)}
     />
   )
-}
-
-function shortType(t: string): string {
-  // varchar(255) -> varchar · int unsigned -> int
-  return (t.split('(')[0] ?? t).trim()
 }
 
 /* ---------------- 消息页 ---------------- */

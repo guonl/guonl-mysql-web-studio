@@ -816,9 +816,6 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .grid td.selected { background: var(--grid-sel) !important; outline: 1.5px solid var(--accent); outline-offset: -1.5px; }
 .grid tr.selected td:not(.rownum) { background: var(--grid-sel); }
 .grid tr:hover td:not(.rownum) { background: var(--bg-hover); }
-.grid td .type-tag {
-  font-size: 10px; color: var(--text-3); margin-left: 4px; font-weight: 400;
-}
 .grid-footer {
   display: flex; align-items: center; gap: 14px;
   padding: 3px 12px;

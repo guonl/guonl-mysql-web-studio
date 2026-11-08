@@ -79,6 +79,10 @@ export async function runTabSql(tabId: string, sqlOverride?: string): Promise<vo
   const statements = splitStatements(sqlText)
   if (!statements.length) { toast.warn('没有可执行的 SQL 语句'); return }
 
+  /* 执行库解析：标签页未选 Schema 时回退连接默认库（让适配器自愈有明确目标）；
+     两者都为空且语句执行报 1046 时，错误提示会引导用户在工具条选择 Schema */
+  const execSchema = tab.schema ?? cfg.database
+
   st.updateTab(tabId, { running: true })
 
   for (const stmt of statements) {
@@ -95,12 +99,12 @@ export async function runTabSql(tabId: string, sqlOverride?: string): Promise<vo
       title: shorten(stmt),
       columns: [], rows: [], rowCount: 0,
       durationMs: 0, at, sql: exec,
-      connId: cfg.id, connName: cfg.name, schema: tab.schema,
+      connId: cfg.id, connName: cfg.name, schema: execSchema,
       kind: 'query',
       autoLimit: exec !== stmt ? max : undefined,
     }
     try {
-      const res = await adapter.execute(exec, tab.schema)
+      const res = await adapter.execute(exec, execSchema)
       if (res.rows.length > max) {
         rs.rows = res.rows.slice(0, max)
         rs.truncated = true
@@ -118,17 +122,21 @@ export async function runTabSql(tabId: string, sqlOverride?: string): Promise<vo
       }
       useStore.getState().appendResult(tabId, rs)
       useStore.getState().pushHistory({
-        sql: stmt, connId: cfg.id, connName: cfg.name, schema: tab.schema,
+        sql: stmt, connId: cfg.id, connName: cfg.name, schema: execSchema,
         ok: true, durationMs: rs.durationMs,
       })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
+      /* 1046（No database selected）：标签页与连接都没有默认库，给出可操作指引而非裸抛 MySQL 原文 */
+      const noDbHint = /no database selected/i.test(msg) && !execSchema
+        ? '—— 当前标签页未选择 Schema，且连接未设置默认库，请在工具条的 Schema 下拉中选择目标库'
+        : ''
       rs.kind = 'error'
-      rs.notice = msg
+      rs.notice = noDbHint ? `${msg}\n${noDbHint}` : msg
       rs.durationMs = performance.now() - t0
       useStore.getState().appendResult(tabId, rs)
       useStore.getState().pushHistory({
-        sql: stmt, connId: cfg.id, connName: cfg.name, schema: tab.schema,
+        sql: stmt, connId: cfg.id, connName: cfg.name, schema: execSchema,
         ok: false, durationMs: rs.durationMs, error: msg,
       })
     }

@@ -38,6 +38,26 @@ export function logAllowList() {
 
 const qesc = (s) => s.replace(/\\/g, '\\\\').replace(/'/g, "''")
 
+/** mysql2 字段类型码 → 可读 SQL 类型名。
+ *  mysql2 的 field.type 是协议数字码（如 253=VAR_STRING、3=LONG），
+ *  前端表头类型标签与数值列判定（isNumericType）都需要真实类型名 */
+const TYPE_NAMES = mysql.Types ?? {}
+const TYPE_ALIASES = {
+  DECIMAL: 'decimal', NEWDECIMAL: 'decimal',
+  TINY: 'tinyint', SHORT: 'smallint', LONG: 'int', INT24: 'mediumint', LONGLONG: 'bigint',
+  FLOAT: 'float', DOUBLE: 'double',
+  TIMESTAMP: 'timestamp', DATETIME: 'datetime', DATE: 'date', NEWDATE: 'date', TIME: 'time', YEAR: 'year',
+  VARCHAR: 'varchar', VAR_STRING: 'varchar', STRING: 'char',
+  TINY_BLOB: 'tinytext', MEDIUM_BLOB: 'mediumtext', LONG_BLOB: 'longtext', BLOB: 'text',
+  BIT: 'bit', JSON: 'json', ENUM: 'enum', SET: 'set', GEOMETRY: 'geometry', NULL: 'null',
+}
+
+function columnTypeName(t) {
+  if (typeof t !== 'number') return String(t ?? '')
+  const name = TYPE_NAMES[t]
+  return String(TYPE_ALIASES[name] ?? name ?? t)
+}
+
 /** mysql2 字段 → 内部列元数据（含用于查注释的原始表/列名） */
 function toColumnMeta(f) {
   const NOT_NULL = 1, PRI_KEY = 2, UNIQUE_KEY = 4, MULTIPLE_KEY = 8
@@ -48,7 +68,7 @@ function toColumnMeta(f) {
     orgName: f.orgName || f.name,
     table: f.orgTable || f.table || '',
     schema: f.schema || '',
-    type: String(f.type || ''),
+    type: columnTypeName(f.type),
     nullable: !(flags & NOT_NULL),
     key,
   }

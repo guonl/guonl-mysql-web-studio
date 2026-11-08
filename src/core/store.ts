@@ -239,12 +239,16 @@ export const useStore = create<AppState>((set, get) => ({
   newTab: (init) => {
     const id = uid('tab')
     const count = get().tabs.length + 1
+    /* Schema 兜底：绑定了连接但未指定 Schema 的新标签页（⌘T / 打开 SQL 文件等入口），
+       回填连接默认库，避免执行时因无默认库而报 No database selected */
+    const cfg = init?.connId ? get().connections.find((c) => c.id === init.connId) : undefined
+    const schema = init?.schema ?? cfg?.database
     set((st) => ({
       tabs: [...st.tabs, {
         id, title: init?.title ?? `查询 ${count}`,
         sql: init?.sql ?? '',
         connId: init?.connId,
-        schema: init?.schema,
+        schema,
         dirty: false,
         results: [], running: false,
         savedScriptId: init?.savedScriptId,

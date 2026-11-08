@@ -94,7 +94,9 @@ export function Workbench() {
       if (!mod) return
       if (e.key === 't' || e.key === 'T') {
         e.preventDefault()
-        useStore.getState().newTab({ connId: useStore.getState().tabs.find((t) => t.id === useStore.getState().activeTabId)?.connId })
+        /* 新标签继承当前标签的连接与 Schema，避免新建后丢失活动库（无默认库时报 No database selected） */
+        const t = useStore.getState().tabs.find((x) => x.id === useStore.getState().activeTabId)
+        useStore.getState().newTab({ connId: t?.connId, schema: t?.schema })
       }
       if (e.key === 's' || e.key === 'S') {
         e.preventDefault()

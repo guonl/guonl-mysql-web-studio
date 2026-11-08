@@ -38,6 +38,9 @@ export class WsAdapter implements DriverAdapter {
         password: this.cfg.password ?? '',
         database: this.cfg.database,
       })
+      /* 重连会新建服务端连接，默认库回到 cfg.database：同步本地缓存，
+         避免旧会话遗留的 currentSchema 让后续 execute 误判「无需 USE」 */
+      this.currentSchema = this.cfg.database
       return { serverVersion }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -59,12 +62,32 @@ export class WsAdapter implements DriverAdapter {
 
   async execute(sql: string, schema?: string): Promise<ExecResult> {
     return this.enqueue(async () => {
-      if (schema && schema !== this.currentSchema) {
-        await this.client.query(`USE ${qi(schema)}`)
-        this.currentSchema = schema
+      try {
+        return await this.execInner(sql, schema)
+      } catch (e) {
+        /* 自愈：服务端默认库与本地 currentSchema 缓存不一致（会话重连 / 服务端连接被
+           重建 / 用户 SQL 手动 USE 了别的库）时，缓存相等会导致 USE 被跳过而报 1046。
+           此时强制 USE 目标库后重试一次，保证「标签页选择了 Schema 就一定生效」 */
+        const err = e as { code?: number | string; message?: string }
+        const noDb = err?.code === 1046 || /no database selected/i.test(err?.message ?? '')
+        if (noDb && schema) {
+          await this.client.query(`USE ${qi(schema)}`)
+          this.currentSchema = schema
+          return this.client.query(sql)
+        }
+        throw e
       }
-      return this.client.query(sql)
     })
+  }
+
+  private execInner(sql: string, schema?: string): Promise<ExecResult> {
+    if (schema && schema !== this.currentSchema) {
+      return this.client.query(`USE ${qi(schema)}`).then(() => {
+        this.currentSchema = schema
+        return this.client.query(sql)
+      })
+    }
+    return this.client.query(sql)
   }
 
   async listSchemas(): Promise<string[]> {
