@@ -73,12 +73,15 @@ export function openTableDesigner(connId: string, schema: string, table: string 
   designerFn?.({ connId, schema, table })
 }
 
-/** 直接导出表数据为 CSV（右键菜单快捷动作） */
+/** 直接导出表数据为 CSV（右键菜单快捷动作）；大表导出耗时长，进行中防重入避免连点重复下载 */
+let csvExporting = false
 export async function exportTableCsv(connId: string, schema: string, table: string) {
-  const st = useStore.getState()
-  const cfg = st.connections.find((c) => c.id === connId)
-  if (!cfg) { toast.error('连接不存在'); return }
+  if (csvExporting) { toast.warn('正在导出中，请稍候…'); return }
+  csvExporting = true
   try {
+    const st = useStore.getState()
+    const cfg = st.connections.find((c) => c.id === connId)
+    if (!cfg) { toast.error('连接不存在'); return }
     const adapter = await ensureConnected(cfg)
     toast.info('正在查询数据…')
     const res = await adapter.execute(`SELECT * FROM ${quoteTable(schema, table)} LIMIT 50000`)
@@ -87,6 +90,8 @@ export async function exportTableCsv(connId: string, schema: string, table: stri
     toast.success(`已导出 ${res.rows.length} 行到 CSV`)
   } catch (e) {
     toast.error(`导出失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    csvExporting = false
   }
 }
 
@@ -180,6 +185,7 @@ function ExportTableModal({ connId, schema, table, onClose }: { connId: string; 
   const [ifNotExists, setIfNotExists] = useState(true)
   const [ignoreDup, setIgnoreDup] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [csvBusy, setCsvBusy] = useState(false)
 
   const toggle = (v: boolean, set: (b: boolean) => void, other: boolean, setOther: (b: boolean) => void) => {
     const next = !v
@@ -258,8 +264,9 @@ function ExportTableModal({ connId, schema, table, onClose }: { connId: string; 
       onClose={onClose}
       foot={
         <>
-          <button className="btn" onClick={() => { void exportTableCsv(connId, schema, table) }}>
-            <IconDownload /> 下载 CSV
+          <button className="btn" disabled={csvBusy}
+            onClick={() => { setCsvBusy(true); void exportTableCsv(connId, schema, table).finally(() => setCsvBusy(false)) }}>
+            <IconDownload /> {csvBusy ? '导出中…' : '下载 CSV'}
           </button>
           <button className="btn" disabled={busy} onClick={() => { void doDownload() }}>
             <IconDownload /> 下载 SQL

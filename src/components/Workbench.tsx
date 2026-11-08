@@ -92,6 +92,12 @@ export function Workbench() {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
       if (!mod) return
+      /* 焦点在输入框时不拦截（侧栏重命名等场景下 ⌘S/⌘T 归原生行为）；
+         CodeMirror 虽是 contentEditable，但在编辑器里新建/保存脚本是常用操作，放行 */
+      const el = e.target as HTMLElement | null
+      const inPlainText = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'
+        || (el.isContentEditable && !el.closest('.cm-editor')))
+      if (inPlainText) return
       if (e.key === 't' || e.key === 'T') {
         e.preventDefault()
         /* 新标签继承当前标签的连接与 Schema，避免新建后丢失活动库（无默认库时报 No database selected） */
@@ -344,7 +350,9 @@ export function Workbench() {
       {/* 可拖拽分隔条 + 结果面板 */}
       <div className="h-resizer" onMouseDown={onResizeStart} title="拖动调整结果区高度" />
       <div style={{ height: prefs.resultHeight, flexShrink: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        <ResultsPanel tab={tab} />
+        {/* key 隔离：切换标签页时整套 ResultsPanel 重新挂载，
+            防止上一个标签的结果分页/滚动/编辑状态串进新标签 */}
+        <ResultsPanel key={tab.id} tab={tab} />
       </div>
 
       {/* 保存脚本弹窗 */}

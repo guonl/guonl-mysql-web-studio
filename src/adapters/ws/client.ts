@@ -32,6 +32,15 @@ export class MysqlClient {
   /** 建立 WS 会话并完成数据库连接认证 */
   async connect(wsUrl: string, opts: MysqlConnectOpts): Promise<{ serverVersion: string }> {
     const base = wsUrl.replace(/\/+$/, '')
+    /* 重连前先清理旧 socket：摘除处理器并关闭，避免孤儿连接泄漏；
+       旧 socket 的 onclose 也因此不会再触发（否则会误杀新连接上的在途请求） */
+    const old = this.ws
+    if (old) {
+      old.onmessage = null
+      old.onclose = null
+      old.onerror = null
+      try { old.close() } catch { /* noop */ }
+    }
     const ws = new WebSocket(base)
     ws.binaryType = 'arraybuffer'
     this.ws = ws
@@ -47,6 +56,8 @@ export class MysqlClient {
 
     ws.onmessage = (ev) => this.handleMessage(String(ev.data))
     ws.onclose = () => {
+      /* 已被更新的连接取代：旧 socket 的关闭与当前会话无关，不清 pending */
+      if (this.ws !== ws) return
       // 会话中断：让所有在途请求失败
       const err = new Error('与桥接器的会话已断开（数据库连接可能中断），请重新连接')
       for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(err) }

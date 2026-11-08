@@ -117,7 +117,9 @@ function tokenize(sql: string): Tok[] {
     }
     if (/[A-Za-z_$\u4e00-\u9fa5@]/.test(ch)) {
       let j = i
-      while (j < n && /[A-Za-z0-9_$\u4e00-\u9fa5.@]/.test(sql[j])) j++
+      /* `.` \u4e0d\u5728\u5ef6\u7eed\u5b57\u7b26\u91cc\uff1a\u9650\u5b9a\u540d\uff08shop.users / u.name\uff09\u6309\u300cid . id\u300d\u62c6\u5206\uff0c
+         \u7531 Parser \u7684\u5e93\u540d\u524d\u7f00\u4e0e\u522b\u540d\u5217\u5206\u652f\uff08peek '.'\uff09\u5904\u7406\uff1b\u5c0f\u6570 1.5 / .5 \u7531\u4e0a\u65b9\u6570\u5b57\u5206\u652f\u627f\u63a5 */
+      while (j < n && /[A-Za-z0-9_$\u4e00-\u9fa5@]/.test(sql[j])) j++
       const v = sql.slice(i, j)
       toks.push({ t: 'id', v, up: v.toUpperCase() })
       i = j
@@ -172,7 +174,9 @@ class Parser {
     while (this.isKw('OR') || this.isKw('||')) {
       this.pos++
       const right = this.parseAnd()
-      left = (r) => left(r) || right(r)
+      const prev = left
+      /* 必须先快照 prev：闭包若直接引用 let left，会捕获到重新赋值后的自身，执行时无限递归爆栈 */
+      left = (r) => prev(r) || right(r)
     }
     return left
   }
@@ -181,7 +185,8 @@ class Parser {
     while (this.isKw('AND') || this.isKw('&&')) {
       this.pos++
       const right = this.parseAtom()
-      left = (r) => left(r) && right(r)
+      const prev = left
+      left = (r) => prev(r) && right(r)
     }
     return left
   }
@@ -201,8 +206,9 @@ class Parser {
     const colTok = this.next()
     if (!colTok || colTok.t !== 'id') throw new DemoSqlError('WHERE 条件语法错误')
     let col = colTok.v
-    // 忽略表别名前缀 t.col
-    if (this.peek()?.t === 'op' && this.peek()!.v === '.' && col.length <= 3 && !this.cols.includes(col)) {
+    /* 忽略表别名前缀 t.col：前缀不是真实列名时按别名剥离（不限长度，列名比较忽略大小写） */
+    const prefixIsColumn = this.cols.some((c) => c.toLowerCase() === col.toLowerCase())
+    if (this.peek()?.t === 'op' && this.peek()!.v === '.' && !prefixIsColumn) {
       this.pos++
       const c2 = this.next()
       if (!c2) throw new DemoSqlError('WHERE 条件语法错误')
@@ -464,14 +470,19 @@ function parseSelect(toks: Tok[]): ParsedSelect {
   if (p.isKw('UNION')) {
     throw new DemoSqlError('演示模式暂不支持 UNION')
   }
-  let where: CmpFn | null = null
-  let whereRaw = ''
+  /* WHERE 截取 token 片段（推进 pos 到下一个顶级子句关键字）：
+     列校验/别名剥离需要真实列名，解析延迟到执行处；
+     不做原文重建：直接用 token 片段，字符串转义不会失真 */
+  let whereToks: Tok[] = []
   if (p.eatKw('WHERE')) {
-    whereRaw = restText(p)
-    const sub = tokenize(whereRaw)
-    const wp = new Parser(sub, [])
-    where = wp.parseOr()
-    if (wp.pos < wp.toks.length) throw new DemoSqlError('WHERE 条件解析不完整')
+    const start = p.pos
+    while (p.pos < p.toks.length) {
+      const t = p.toks[p.pos]
+      if (t.t === 'id' && ['ORDER', 'GROUP', 'HAVING', 'LIMIT', 'OFFSET', 'UNION'].includes(t.up)) break
+      p.pos++
+    }
+    whereToks = p.toks.slice(start, p.pos)
+    if (!whereToks.length) throw new DemoSqlError('WHERE 后缺少条件')
   }
   const groupBy: string[] = []
   if (p.eatKw('GROUP')) {
@@ -524,12 +535,7 @@ function parseSelect(toks: Tok[]): ParsedSelect {
   if (p.pos < p.toks.length) {
     throw new DemoSqlError(`演示模式无法解析 SQL 片段：'${p.toks.slice(p.pos).map((t) => t.v).join(' ')}'`)
   }
-  return { distinct, items, table, db, where, whereRaw, groupBy, orderBy, limit, offset }
-}
-
-function restText(p: Parser): string {
-  // 从当前位置回溯原文：利用 tokenizer 不改变 token 内容，简单重建（字符串重新加引号）
-  return p.toks.slice(p.pos).map((t) => (t.t === 'str' ? `'${t.v}'` : t.v)).join(' ')
+  return { distinct, items, table, db, whereToks, groupBy, orderBy, limit, offset }
 }
 
 interface ParsedSelect {
@@ -537,8 +543,7 @@ interface ParsedSelect {
   items: SelectItem[]
   table: string
   db?: string
-  where: CmpFn | null
-  whereRaw: string
+  whereToks: Tok[]
   groupBy: string[]
   orderBy: { col: string; desc: boolean }[]
   limit?: number
@@ -549,12 +554,21 @@ function execSelect(sql: string, currentSchema: string): ExecResult {
   const toks = tokenize(sql)
   const sel = parseSelect(toks)
   const schema = (sel.db ?? currentSchema).replace(/@@/, '')
+
+  /* WHERE 延迟解析：此处已可拿到真实列名，列校验与别名剥离（t.col）才有依据 */
+  const buildWhere = (cols: string[]): CmpFn => {
+    const wp = new Parser(sel.whereToks, cols)
+    const fn = wp.parseOr()
+    if (wp.pos < wp.toks.length) throw new DemoSqlError('WHERE 条件解析不完整')
+    return fn
+  }
+
   if (SYSTEM_SCHEMAS.includes(schema.toLowerCase())) {
     // information_schema 虚拟表
     if (schema.toLowerCase() === 'information_schema') {
       const virt = infoSchemaTable(sel.table.toUpperCase())
       if (virt) {
-        const filtered = sel.where ? virt.rows.filter(sel.where) : virt.rows
+        const filtered = sel.whereToks.length ? virt.rows.filter(buildWhere(virt.cols)) : virt.rows
         const projected = projectRows(filtered, virt.cols, sel)
         return wrapResult(projected, sel, sql)
       }
@@ -565,7 +579,7 @@ function execSelect(sql: string, currentSchema: string): ExecResult {
   const def = findDef(schema, sel.table)
   const cols = def.columns.map((c) => c.name)
   let rows = tableRows(schema, def)
-  if (sel.where) rows = rows.filter(sel.where)
+  if (sel.whereToks.length) rows = rows.filter(buildWhere(cols))
   const projected = projectRows(rows, cols, sel, def, schema)
   return wrapResult(projected, sel, sql)
 }

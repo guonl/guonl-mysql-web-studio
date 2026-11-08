@@ -165,13 +165,52 @@ interface Editability {
  * 1. 是查询结果；2. 包含主键列；3. 非 DISTINCT/GROUP BY/UNION/聚合（行必须是物理行）；
  * 4. 全部列来自同一张表（排除 JOIN / 表达式列），且能拿到原始表名定位 UPDATE。
  */
+/* 单遍扫描剥离字符串与注释：后续关键字正则只看真实 SQL 结构，
+   避免 WHERE note = '如何 group by 处理' 或注释里的 distinct 造成误判 */
+function stripSqlLiterals(sql: string): string {
+  let out = ''
+  let i = 0
+  const n = sql.length
+  while (i < n) {
+    const ch = sql[i]
+    if (ch === "'" || ch === '"' || ch === '`') {
+      const q = ch
+      i++
+      while (i < n) {
+        if (q !== '`' && sql[i] === '\\') { i += 2; continue } // 反斜杠转义（MySQL 字符串）
+        if (sql[i] === q) {
+          if (q !== '`' && sql[i + 1] === q) { i += 2; continue } // '' / "" 转义
+          i++
+          break
+        }
+        i++
+      }
+      out += q + q // 占位，保持词边界
+      continue
+    }
+    if (ch === '-' && sql[i + 1] === '-') { while (i < n && sql[i] !== '\n') i++; out += ' '; continue }
+    if (ch === '#') { while (i < n && sql[i] !== '\n') i++; out += ' '; continue }
+    if (ch === '/' && sql[i + 1] === '*') {
+      i += 2
+      while (i < n && !(sql[i] === '*' && sql[i + 1] === '/')) i++
+      i += 2
+      out += ' '
+      continue
+    }
+    out += ch
+    i++
+  }
+  return out
+}
+
 function checkEditable(rs: ResultSet): Editability {
   const no = (reason: string): Editability => ({ ok: false, reason, pkIdx: [] })
   if (rs.kind !== 'query') return no('仅查询结果支持编辑')
   if (!rs.columns.length) return no('无列信息')
   const pkIdx = rs.columns.map((c, i) => (c.key === 'PRI' ? i : -1)).filter((i) => i >= 0)
   if (!pkIdx.length) return no('查询结果中未包含主键列，无法定位记录')
-  if (/\b(distinct|group\s+by|union(\s+all)?|having)\b/i.test(rs.sql) || /\b(count|sum|avg|min|max)\s*\(/i.test(rs.sql)) {
+  const bareSql = stripSqlLiterals(rs.sql)
+  if (/\b(distinct|group\s+by|union(\s+all)?|having)\b/i.test(bareSql) || /\b(count|sum|avg|min|max)\s*\(/i.test(bareSql)) {
     return no('聚合 / 分组 / DISTINCT 结果不是物理行，不支持编辑')
   }
   const tables = new Set(rs.columns.map((c) => `${c.schema ?? ''}.${c.table ?? ''}`))
@@ -584,10 +623,23 @@ function CellEditor({ initial, onCommit, onCancel }: {
 }) {
   const ref = useRef<HTMLInputElement>(null)
   const [val, setVal] = useState(initial)
+  /* 卸载清理闭包捕获的是首帧 val，用 ref 取最新值 */
+  const valRef = useRef(val)
+  valRef.current = val
+  const settled = useRef(false)
+  const settle = (commit: boolean) => {
+    if (settled.current) return
+    settled.current = true
+    commit ? onCommit(valRef.current) : onCancel()
+  }
 
   useEffect(() => {
     ref.current?.focus()
     ref.current?.select()
+    /* 虚拟滚动把行滚出视口时输入框被直接卸载，不触发 blur：
+       卸载时若有改动按 blur 语义补提交（onCellEdit 对与原值相同的提交是 no-op，不会误标修改） */
+    return () => { settle(valRef.current !== initial) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
@@ -600,10 +652,10 @@ function CellEditor({ initial, onCommit, onCancel }: {
       onDoubleClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         e.stopPropagation()
-        if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); onCommit(val) }
-        else if (e.key === 'Escape') { e.preventDefault(); onCancel() }
+        if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); settle(true) }
+        else if (e.key === 'Escape') { e.preventDefault(); settle(false) }
       }}
-      onBlur={() => onCommit(val)}
+      onBlur={() => settle(true)}
     />
   )
 }

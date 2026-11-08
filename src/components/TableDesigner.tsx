@@ -16,7 +16,7 @@ import {
 } from '../core/tableDesign'
 import { Modal } from './Modal'
 import { SqlViewer } from './SqlViewer'
-import { openSqlModal } from './ModalHost'
+import { openSqlModal, confirmDialog } from './ModalHost'
 import { toast } from './Toast'
 import { IconChevronDown, IconChevronUp, IconPlus, IconTrash } from './icons'
 
@@ -50,6 +50,7 @@ export function TableDesigner({ connId, schema, table, onClose }: TableDesignerP
   const [ifNotExists, setIfNotExists] = useState(true)
 
   const seq = useRef(0) // 新增行稳定 key（col-new-N，不与加载的 col-i 冲突）
+  const commentTouched = useRef(false) // 用户是否手动改过表注释（加载回填不覆盖手动输入）
 
   /* 编辑模式：挂载时拉取服务器列、主键与二级索引（索引加载失败不拖垮整表加载） */
   useEffect(() => {
@@ -61,11 +62,17 @@ export function TableDesigner({ connId, schema, table, onClose }: TableDesignerP
         const c = st.connections.find((x) => x.id === connId)
         if (!c) throw new Error('连接不存在')
         const ad = await ensureConnected(c)
-        const [cols, pk] = await Promise.all([ad.getColumns(schema, table), ad.getPK(schema, table)])
+        const [cols, pk, tms] = await Promise.all([
+          ad.getColumns(schema, table), ad.getPK(schema, table), ad.listTables(schema),
+        ])
         if (!alive) return
         setOrigCols(cols)
         setOrigPK(pk)
         setDrafts(cols.map((col, i) => draftFromColumn(col, `col-${i}`)))
+        /* 表注释以服务器为准回填：meta 缓存可能尚未加载（初始 ''），
+           直接保存会把 COMMENT='' 写进 ALTER 静默抹掉原注释 */
+        const tm = tms.find((t) => t.name === table)
+        if (tm && !commentTouched.current) setComment(tm.comment ?? '')
         let idxs: IndexMeta[] = []
         try {
           idxs = ad.getIndexes ? await ad.getIndexes(schema, table) : []
@@ -144,6 +151,28 @@ export function TableDesigner({ connId, schema, table, onClose }: TableDesignerP
     })
   }, [drafts, table, name, origCols, origPK, origIndexes, idxDrafts, tableMeta, comment, engine, charset, collate, ifNotExists, schema])
 
+  /* onExecute 经弹窗异步触发，读 ref 取最新预览结果，避免闭包固化旧的 result.sql */
+  const resultRef = useRef(result)
+  resultRef.current = result
+
+  /* ---------------- 关闭守卫：有未保存修改时先确认 ---------------- */
+  const handleClose = async () => {
+    const dirty = drafts
+      ? table
+        ? result.changes.length > 0
+        : !!(name.trim() || comment.trim() || drafts.some((d) => d.name.trim()) || idxDrafts.some((i) => i.name.trim()))
+      : false
+    if (dirty) {
+      const ok = await confirmDialog({
+        title: '放弃修改？',
+        message: '表设计有未保存的修改，关闭后将丢失。',
+        danger: true,
+      })
+      if (!ok) return
+    }
+    onClose()
+  }
+
   /* ---------------- 保存：校验 → SQL 预览弹窗（可执行） ---------------- */
   const doSave = () => {
     if (!drafts || !result.sql) return
@@ -167,14 +196,14 @@ export function TableDesigner({ connId, schema, table, onClose }: TableDesignerP
         if (!c) throw new Error('连接不存在')
         const ad = await ensureConnected(c)
         const t0 = performance.now()
-        await ad.execute(result.sql, schema)
+        await ad.execute(resultRef.current.sql, schema)
         const durationMs = Math.round(performance.now() - t0)
         /* DDL 后刷新表 / 列缓存（刷新失败不阻塞保存） */
         try {
           st.setTables(connId, schema, await ad.listTables(schema))
           st.setColumns(connId, schema, n, await ad.getColumns(schema, n))
         } catch { /* ignore */ }
-        st.pushHistory({ sql: result.sql, connId, connName: c.name, schema, ok: true, durationMs })
+        st.pushHistory({ sql: resultRef.current.sql, connId, connName: c.name, schema, ok: true, durationMs })
         toast.success(table ? `表 ${n} 已更新` : `表 ${n} 已创建`)
         onClose()
       },
@@ -189,10 +218,10 @@ export function TableDesigner({ connId, schema, table, onClose }: TableDesignerP
       sub={table ? '修改列后保存，将生成 ALTER TABLE；可先预览 SQL 再执行' : '定义各列后保存，将生成 CREATE TABLE 语句'}
       width={1000}
       resizable
-      onClose={onClose}
+      onClose={handleClose}
       foot={
         <>
-          <button className="btn" onClick={onClose}>取消</button>
+          <button className="btn" onClick={() => { void handleClose() }}>取消</button>
           <button className="btn primary" disabled={!result.sql} onClick={doSave}>
             {table ? '保存改动…' : '创建表…'}
           </button>
@@ -203,7 +232,7 @@ export function TableDesigner({ connId, schema, table, onClose }: TableDesignerP
         {loadErr ? (
           <div className="designer-error">
             <div>加载表结构失败：{loadErr}</div>
-            <button className="btn" onClick={onClose}>关闭</button>
+            <button className="btn" onClick={() => { void handleClose() }}>关闭</button>
           </div>
         ) : !drafts ? (
           <div className="designer-loading">正在加载表结构…</div>
@@ -218,7 +247,7 @@ export function TableDesigner({ connId, schema, table, onClose }: TableDesignerP
                   <>
                     <label className="lbl">表注释</label>
                     <input className="input" value={comment} placeholder="可选"
-                      onChange={(e) => setComment(e.target.value)} />
+                      onChange={(e) => { commentTouched.current = true; setComment(e.target.value) }} />
                   </>
                 ) : (
                   <>
@@ -236,7 +265,7 @@ export function TableDesigner({ connId, schema, table, onClose }: TableDesignerP
                     </select>
                     <label className="lbl">表注释</label>
                     <input className="input" value={comment} placeholder="可选"
-                      onChange={(e) => setComment(e.target.value)} />
+                      onChange={(e) => { commentTouched.current = true; setComment(e.target.value) }} />
                     <div className="full checkbox-row">
                       <input type="checkbox" id="chk-td-ine" checked={ifNotExists}
                         onChange={(e) => setIfNotExists(e.target.checked)} />

@@ -36,6 +36,9 @@ export function hasDesktopBridge(): boolean {
 const CONNECT_TIMEOUT = 15_000
 const QUERY_TIMEOUT = 60_000
 
+/** 会话级断开的错误特征（主进程 mysql2 连接 fatal 被销毁后 rec 不存在） */
+const SESSION_LOST = /尚未连接数据库/
+
 /** 标识符加反引号并转义 */
 const qi = (s: string) => '`' + s.replace(/`/g, '``') + '`'
 
@@ -123,10 +126,19 @@ export class IpcAdapter implements DriverAdapter {
       try {
         return await this.call<ExecResult>('query', { connId: this.cfg.id, sql, schema: switchTo }, '查询')
       } catch (e) {
-        /* 自愈：主进程连接被重建 / 用户 SQL 手动 USE 等导致本地缓存与服务端默认库不一致时，
-           切库被跳过会报 1046（No database selected）。此时强制带 schema 重发一次（主进程必执行 USE） */
         const err = e as { code?: number | string; message?: string }
-        const noDb = err?.code === 1046 || /no database selected/i.test(err?.message ?? '')
+        const msg = err?.message ?? ''
+        /* 自愈一：主进程连接 fatal 被销毁（rec 不存在）→ 自动重连一次并重试 */
+        if (SESSION_LOST.test(msg)) {
+          await this.connect()
+          /* 重连后 currentSchema 已与 cfg.database 对齐，重新计算 switchTo */
+          const switchTo2 = schema && schema !== this.currentSchema ? schema : undefined
+          if (switchTo2) this.currentSchema = schema
+          return this.call<ExecResult>('query', { connId: this.cfg.id, sql, schema: switchTo2 }, '查询')
+        }
+        /* 自愈二：主进程连接被重建 / 用户 SQL 手动 USE 等导致本地缓存与服务端默认库不一致时，
+           切库被跳过会报 1046（No database selected）。此时强制带 schema 重发一次（主进程必执行 USE） */
+        const noDb = err?.code === 1046 || /no database selected/i.test(msg)
         if (noDb && schema) {
           this.currentSchema = schema
           return this.call<ExecResult>('query', { connId: this.cfg.id, sql, schema }, '查询')

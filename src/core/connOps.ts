@@ -8,34 +8,47 @@ import { splitStatements, isReadOnlySql, isQueryStatement, hasTopLevelLimit, app
 import { uid, fmtDuration } from './utils'
 import { toast } from '../components/Toast'
 
-/** 创建（或复用）连接的适配器并完成握手 */
+/** 创建（或复用）连接的适配器并完成握手。
+ *  按 connId 去重 in-flight 握手：断线后多标签并发执行只触发一次真正连接 */
+const connecting = new Map<string, Promise<DriverAdapter>>()
+
 export async function ensureConnected(cfg: ConnectionConfig): Promise<DriverAdapter> {
   const st = useStore.getState()
   const existed = getAdapter(cfg)
   const rt = st.runtime[cfg.id]
   if (existed && rt?.status === 'connected') return existed
+  const inflight = connecting.get(cfg.id)
+  if (inflight) return inflight
 
-  st.setRuntime(cfg.id, { status: 'connecting', error: undefined })
+  const task = (async (): Promise<DriverAdapter> => {
+    st.setRuntime(cfg.id, { status: 'connecting', error: undefined })
+    try {
+      // 已有适配器则复用重连（connect 幂等）；否则新建
+      const adapter: DriverAdapter = existed ?? (() => {
+        const a = cfg.type === 'demo'
+          ? new DemoAdapter(cfg.database || 'shop')
+          : cfg.type === 'desktop'
+            ? new IpcAdapter(cfg)
+            : new WsAdapter(cfg)
+        registerAdapter(cfg.id, a)
+        return a
+      })()
+      const { serverVersion } = await adapter.connect()
+      const schemas = await adapter.listSchemas()
+      useStore.getState().connected(cfg.id, serverVersion, cfg.database)
+      useStore.getState().setSchemas(cfg.id, schemas)
+      return adapter
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      useStore.getState().setRuntime(cfg.id, { status: 'error', error: msg })
+      throw e
+    }
+  })()
+  connecting.set(cfg.id, task)
   try {
-    // 已有适配器则复用重连（connect 幂等）；否则新建
-    const adapter: DriverAdapter = existed ?? (() => {
-      const a = cfg.type === 'demo'
-        ? new DemoAdapter(cfg.database || 'shop')
-        : cfg.type === 'desktop'
-          ? new IpcAdapter(cfg)
-          : new WsAdapter(cfg)
-      registerAdapter(cfg.id, a)
-      return a
-    })()
-    const { serverVersion } = await adapter.connect()
-    const schemas = await adapter.listSchemas()
-    useStore.getState().connected(cfg.id, serverVersion, cfg.database)
-    useStore.getState().setSchemas(cfg.id, schemas)
-    return adapter
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    useStore.getState().setRuntime(cfg.id, { status: 'error', error: msg })
-    throw e
+    return await task
+  } finally {
+    connecting.delete(cfg.id)
   }
 }
 
@@ -68,24 +81,33 @@ export async function runTabSql(tabId: string, sqlOverride?: string): Promise<vo
     return
   }
 
+  /* 防重入：必须先同步置 running 再做任何 await，
+     否则连接握手间隙内连按 ⌘Enter 会让同一批语句执行两遍 */
+  st.updateTab(tabId, { running: true })
+
   let adapter: DriverAdapter
   try {
     adapter = await ensureConnected(cfg)
   } catch (e) {
+    st.updateTab(tabId, { running: false })
     toast.error(`连接失败：${e instanceof Error ? e.message : String(e)}`)
     return
   }
 
   const statements = splitStatements(sqlText)
-  if (!statements.length) { toast.warn('没有可执行的 SQL 语句'); return }
+  if (!statements.length) {
+    st.updateTab(tabId, { running: false })
+    toast.warn('没有可执行的 SQL 语句')
+    return
+  }
 
   /* 执行库解析：标签页未选 Schema 时回退连接默认库（让适配器自愈有明确目标）；
      两者都为空且语句执行报 1046 时，错误提示会引导用户在工具条选择 Schema */
   const execSchema = tab.schema ?? cfg.database
 
-  st.updateTab(tabId, { running: true })
-
   for (const stmt of statements) {
+    /* 标签页在执行中途被关闭：立即取消剩余语句（避免 DML 在用户不知情时继续落库） */
+    if (!useStore.getState().tabs.some((t) => t.id === tabId)) return
     const t0 = performance.now()
     const at = Date.now()
     const max = useStore.getState().prefs.maxRows
@@ -105,6 +127,10 @@ export async function runTabSql(tabId: string, sqlOverride?: string): Promise<vo
     }
     try {
       const res = await adapter.execute(exec, execSchema)
+      /* DDL 执行成功后失效该连接的表/列元数据缓存，避免补全 / 树 / 设计器展示旧结构 */
+      if (/^\s*(CREATE|ALTER|DROP|RENAME|TRUNCATE)\b/i.test(stmt)) {
+        useStore.getState().invalidateMeta(cfg.id)
+      }
       if (res.rows.length > max) {
         rs.rows = res.rows.slice(0, max)
         rs.truncated = true

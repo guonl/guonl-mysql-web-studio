@@ -1,6 +1,6 @@
 /* CodeMirror 6 SQL 编辑器封装 */
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
-import { Annotation, Compartment, EditorState } from '@codemirror/state'
+import { Annotation, Compartment, EditorState, Transaction } from '@codemirror/state'
 import {
   EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter,
   highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor,
@@ -123,7 +123,12 @@ export const CodeMirrorEditor = forwardRef<EditorHandle, Props>(function CodeMir
     if (v.state.doc.toString() !== value) {
       v.dispatch({
         changes: { from: 0, to: v.state.doc.length, insert: value },
-        annotations: externalSync.of(true),
+        annotations: [
+          externalSync.of(true),
+          /* 不进撤销栈：多标签共享同一个 EditorView 的 history，
+             否则切换标签后 ⌘Z 会把上一个标签的 SQL 整篇撤销进当前标签 */
+          Transaction.addToHistory.of(false),
+        ],
       })
     }
   }, [value])

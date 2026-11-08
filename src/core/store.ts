@@ -85,6 +85,8 @@ interface AppState {
   setSchemas: (connId: string, schemas: string[]) => void
   setTables: (connId: string, schema: string, tables: TableMeta[]) => void
   setColumns: (connId: string, schema: string, table: string, cols: ColumnMeta[]) => void
+  /** DDL 执行后失效该连接的表/列缓存（保留 Schema 清单），驱动树 / 补全 / 设计器刷新 */
+  invalidateMeta: (connId: string) => void
 
   /* 标签页 */
   newTab: (init?: Partial<QueryTab>) => string
@@ -115,23 +117,46 @@ interface AppState {
   pushEditorIntent: (type: 'insert' | 'replace', sql: string) => void
 }
 
-/* 持久化辅助 */
-function persist() {
+/* 持久化辅助：300ms 尾沿防抖。
+   setTabSql 每个按键、拖拽每个 mousemove 都会触发 persist——防抖 + 剥离结果集
+   避免把数 MB 的 results 反复 JSON.stringify（输入卡顿 + localStorage 5MB 配额爆掉后静默不再持久化） */
+let persistTimer: ReturnType<typeof setTimeout> | null = null
+
+function doPersist() {
   const s = useStore.getState()
   /* 未勾选「记住密码」的连接：密码仅本次会话内存有效，不写入 localStorage */
   saveStore('connections', s.connections.map((c) => (c.rememberPassword ? c : { ...c, password: undefined })))
-  saveStore('tabs', s.tabs)
+  saveStore('activeTabId', s.activeTabId)
+  /* 结果集是会话临时态，不落盘（刷新后为空是预期行为） */
+  saveStore('tabs', s.tabs.map((t) => ({ ...t, results: [] })))
   saveStore('scripts', s.scripts)
   saveStore('history', s.history)
   saveStore('prefs', s.prefs)
 }
 
+function persist() {
+  if (persistTimer) return
+  persistTimer = setTimeout(() => {
+    persistTimer = null
+    doPersist()
+  }, 300)
+}
+
+/* 页面卸载前排空防抖，避免最后一次编辑丢失 */
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; doPersist() }
+  })
+}
+
 const loadTabs = (): { tabs: QueryTab[]; activeTabId: string } => {
   const tabs = loadStore<QueryTab[]>('tabs', [])
   if (tabs.length) {
+    /* 恢复上次的活动标签页（旧数据无 activeTabId 时回落到第一个） */
+    const savedActive = loadStore<string>('activeTabId', '')
     return {
       tabs: tabs.map((t) => ({ ...t, running: false, results: t.results?.slice(-12) ?? [] })),
-      activeTabId: tabs[0].id,
+      activeTabId: tabs.some((t) => t.id === savedActive) ? savedActive : tabs[0].id,
     }
   }
   const id = uid('tab')
@@ -233,6 +258,13 @@ export const useStore = create<AppState>((set, get) => ({
     set((st) => {
       const m: ConnMetaCache = st.meta[connId] ?? { schemas: null, tables: {}, columns: {} }
       return { meta: { ...st.meta, [connId]: { ...m, columns: { ...m.columns, [`${schema}.${table}`]: cols } } } }
+    }),
+  invalidateMeta: (connId) =>
+    set((st) => {
+      const m = st.meta[connId]
+      if (!m) return {}
+      /* 保留 Schema 清单与 serverVersion；表/列结构可能已被 DDL 改变，全部重新加载 */
+      return { meta: { ...st.meta, [connId]: { ...m, tables: {}, columns: {} } } }
     }),
 
   /* 标签页 */

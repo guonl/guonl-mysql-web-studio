@@ -130,6 +130,8 @@ export function ScriptsPanel() {
                     if (e.key === 'Escape') setEditingId(null)
                   }}
                   onClick={(e) => e.stopPropagation()}
+                  /* 双击选词时不冒泡到 script-item 的 onDoubleClick（会误触发打开脚本） */
+                  onDoubleClick={(e) => e.stopPropagation()}
                 />
               ) : sc.name}
               <span className="ops" onClick={(e) => e.stopPropagation()}>

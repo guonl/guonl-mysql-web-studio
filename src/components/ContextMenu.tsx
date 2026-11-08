@@ -21,7 +21,8 @@ export function openContextMenu(
 ) {
   e.preventDefault()
   e.stopPropagation?.()
-  openFn?.(e.clientX, e.clientY, items.filter((i) => i.sep || (!i.disabled && i.label)))
+  /* 置灰项保留展示（disabled 样式已渲染），只过滤无 label 的占位 */
+  openFn?.(e.clientX, e.clientY, items.filter((i) => i.sep || i.label))
 }
 
 export function ContextMenuHost() {
@@ -65,7 +66,7 @@ export function ContextMenuHost() {
           <div
             key={i}
             className={`ctx-item ${it.danger ? 'danger' : ''} ${it.disabled ? 'disabled' : ''}`}
-            onClick={() => { setSt(null); it.onClick?.() }}
+            onClick={() => { if (it.disabled) return; setSt(null); it.onClick?.() }}
           >
             {it.icon && <span className="ctx-icon">{it.icon}</span>}
             <span>{it.label}</span>

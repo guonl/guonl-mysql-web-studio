@@ -2,10 +2,14 @@
 
 import type { ColumnMeta, ConnectionConfig, DriverAdapter, ExecResult, IndexMeta, TableMeta } from '../../core/types'
 import { defaultBridgeUrl } from '../../core/storage'
+import { useStore } from '../../core/store'
 import { MysqlClient } from './client'
 
 /** 标识符加反引号并转义 */
 const qi = (s: string) => '`' + s.replace(/`/g, '``') + '`'
+
+/** 会话级断开的错误特征（WS 会话关闭 / 桥接端 mysql2 连接被销毁后 conn 为空） */
+const SESSION_LOST = /尚未连接数据库|会话已断开|桥接会话未就绪/
 
 export class WsAdapter implements DriverAdapter {
   kind = 'ws' as const
@@ -18,6 +22,11 @@ export class WsAdapter implements DriverAdapter {
   constructor(cfg: ConnectionConfig) {
     this.cfg = cfg
     this.currentSchema = cfg.database
+    /* 会话意外断开（桥接器重启 / 网络中断）：立即把运行时状态标回 disconnected，
+       让后续 ensureConnected 走真正的重连，而不是带着「已连接」的旧状态直接执行 */
+    this.client.setOnUnexpectedClose(() => {
+      useStore.getState().setRuntime(cfg.id, { status: 'disconnected', error: '与桥接器的会话已断开，执行时将自动重连' })
+    })
   }
 
   private enqueue<T>(fn: () => Promise<T>): Promise<T> {
@@ -65,11 +74,17 @@ export class WsAdapter implements DriverAdapter {
       try {
         return await this.execInner(sql, schema)
       } catch (e) {
-        /* 自愈：服务端默认库与本地 currentSchema 缓存不一致（会话重连 / 服务端连接被
-           重建 / 用户 SQL 手动 USE 了别的库）时，缓存相等会导致 USE 被跳过而报 1046。
-           此时强制 USE 目标库后重试一次，保证「标签页选择了 Schema 就一定生效」 */
         const err = e as { code?: number | string; message?: string }
-        const noDb = err?.code === 1046 || /no database selected/i.test(err?.message ?? '')
+        const msg = err?.message ?? ''
+        /* 自愈一：会话级断开（桥接器重启 / 服务端 mysql2 连接致命错误后被清空，
+           WS 未关闭时不会触发 onclose，前端无从感知）。自动重连一次并重试 */
+        if (SESSION_LOST.test(msg)) {
+          await this.connect()
+          return this.execInner(sql, schema)
+        }
+        /* 自愈二：服务端默认库与本地 currentSchema 缓存不一致时，缓存相等会导致
+           USE 被跳过而报 1046。强制 USE 目标库后重试一次，保证「选了 Schema 就一定生效」 */
+        const noDb = err?.code === 1046 || /no database selected/i.test(msg)
         if (noDb && schema) {
           await this.client.query(`USE ${qi(schema)}`)
           this.currentSchema = schema

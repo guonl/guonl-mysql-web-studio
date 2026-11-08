@@ -97,8 +97,21 @@ export async function chatStream(s: AiSettings, req: ChatRequest): Promise<ChatR
   if (s.temperature != null) body.temperature = s.temperature
   if (s.maxTokens != null) body.max_tokens = s.maxTokens
 
-  const timeout = AbortSignal.timeout?.(s.timeoutMs ?? 60_000)
-  const signal = timeout ? AbortSignal.any([req.signal, timeout]) : req.signal
+  /* 空闲超时：任一 chunk 到达即重置计时——timeoutMs 约束的是「无数据的最长间隔」，
+     而非整个请求的总时长（长回答不会再被总时长掐断成半截） */
+  const idleMs = s.timeoutMs ?? 60_000
+  const ctrl = new AbortController()
+  let timedOut = false
+  let idleTimer: ReturnType<typeof setTimeout> | null = null
+  const armIdle = () => {
+    if (idleTimer) clearTimeout(idleTimer)
+    idleTimer = setTimeout(() => { timedOut = true; ctrl.abort() }, idleMs)
+  }
+  const onUserAbort = () => ctrl.abort()
+  if (req.signal.aborted) ctrl.abort()
+  else req.signal.addEventListener('abort', onUserAbort)
+  armIdle()
+  const signal = ctrl.signal
 
   let res: Response
   try {
@@ -112,9 +125,17 @@ export async function chatStream(s: AiSettings, req: ChatRequest): Promise<ChatR
       signal,
     })
   } catch (e) {
-    throw normalizeNetworkError(e)
+    if (idleTimer) clearTimeout(idleTimer)
+    req.signal.removeEventListener('abort', onUserAbort)
+    throw timedOut
+      ? new AiError(`模型响应超时（${Math.round(idleMs / 1000)}s 无数据），请检查网络或稍后重试`, true)
+      : normalizeNetworkError(e)
   }
-  if (!res.ok) throw await normalizeHttpError(res)
+  if (!res.ok) {
+    if (idleTimer) clearTimeout(idleTimer)
+    req.signal.removeEventListener('abort', onUserAbort)
+    throw await normalizeHttpError(res)
+  }
   if (!res.body) throw new AiError('响应无内容流（stream 为空）')
 
   let content = ''
@@ -148,7 +169,9 @@ export async function chatStream(s: AiSettings, req: ChatRequest): Promise<ChatR
     delta.tool_calls?.forEach((tc) => {
       const agg = tcAgg.get(tc.index) ?? { id: '', name: '', args: '' }
       if (tc.id) agg.id = tc.id
-      if (tc.function?.name) agg.name += tc.function.name
+      /* name 必须覆盖而非追加：官方端点只在首分片发 name，
+         但部分 OpenAI 兼容网关每个分片重发完整 name，追加会聚合成「run_queryrun_query」 */
+      if (tc.function?.name) agg.name = tc.function.name
       if (tc.function?.arguments) agg.args += tc.function.arguments
       tcAgg.set(tc.index, agg)
     })
@@ -157,6 +180,7 @@ export async function chatStream(s: AiSettings, req: ChatRequest): Promise<ChatR
   try {
     for (;;) {
       const { done, value } = await reader.read()
+      armIdle() // 收到数据即重置空闲计时
       if (done) break
       buf += decoder.decode(value, { stream: true })
       // SSE 事件以空行分隔；逐块处理已完整的部分
@@ -169,7 +193,11 @@ export async function chatStream(s: AiSettings, req: ChatRequest): Promise<ChatR
     }
     if (buf.trim()) handleBlock(buf)
   } catch (e) {
+    if (timedOut) throw new AiError(`模型响应超时（${Math.round(idleMs / 1000)}s 无数据），请检查网络或稍后重试`, true)
     throw normalizeNetworkError(e)
+  } finally {
+    if (idleTimer) clearTimeout(idleTimer)
+    req.signal.removeEventListener('abort', onUserAbort)
   }
 
   const toolCalls: ToolCallItem[] = [...tcAgg.values()]

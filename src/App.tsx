@@ -87,7 +87,9 @@ export function App() {
   }
 
   const connectedCount = Object.values(runtime).filter((r) => r.status === 'connected').length
-  const currentConn = connections.find((c) => c.id === tabs.find((t) => t.id === useStore.getState().activeTabId)?.connId)
+  /* 订阅 activeTabId：getState() 非响应式，切标签后状态栏的连接指示不会刷新 */
+  const activeTabConnId = useStore((s) => s.tabs.find((t) => t.id === s.activeTabId)?.connId)
+  const currentConn = connections.find((c) => c.id === activeTabConnId)
   const currentRt = currentConn ? runtime[currentConn.id] : undefined
 
   return (
