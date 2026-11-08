@@ -105,6 +105,12 @@ const NEWLINE_BEFORE = new Set([
   'LEFT OUTER JOIN', 'RIGHT OUTER JOIN', 'INNER OUTER JOIN', 'CROSS JOIN', 'ON',
 ])
 
+/** 这些关键字后的 `(` 保留空格（IN (…) / VALUES (…)）；其余词后的 `(` 视为函数调用直接粘合（COUNT(*)） */
+const SPACE_BEFORE_PAREN = new Set([
+  'IN', 'EXISTS', 'ON', 'AND', 'OR', 'NOT', 'WHERE', 'FROM', 'SELECT', 'VALUES', 'SET',
+  'HAVING', 'THEN', 'ELSE', 'WHEN', 'BY', 'AS', 'LIKE', 'UNION', 'ALL', 'LIMIT', 'JOIN', 'USING', 'DISTINCT',
+])
+
 /**
  * 轻量 SQL 美化：按分号拆分多条语句，逐条格式化（关键字大写 + 主要子句换行缩进），
  * 每条语句以分号结尾、语句之间空一行分隔，多语句不再揉在一起。
@@ -122,6 +128,10 @@ function formatStatement(sql: string): string {
   let out = ''
   let depth = 0
   let prev = ''
+  /* 上一个 token 以限定符 `.` 结尾时，当前 token 直接粘上（db2.sales） */
+  let glueNext = false
+  /* 表位置跟踪：INTO/FROM/UPDATE/JOIN 之后的 `(` 是列清单/子查询（INSERT INTO t (…)），不与表名粘合 */
+  let tablePos = false
   for (let i = 0; i < tokens.length; i++) {
     const tk = tokens[i]
     const up = tk.toUpperCase()
@@ -138,6 +148,10 @@ function formatStatement(sql: string): string {
       continue
     }
 
+    if (up === 'INTO' || up === 'FROM' || up === 'UPDATE' || up === 'JOIN' || phrase.endsWith('JOIN')) tablePos = true
+    else if (up === 'SELECT' || up === 'WHERE' || up === 'SET' || up === 'VALUES' || up === 'ON' || up === 'AS'
+      || up === 'GROUP' || up === 'ORDER' || up === 'HAVING' || up === 'LIMIT' || up === 'UNION') tablePos = false
+
     if (NEWLINE_BEFORE.has(phrase)) {
       out = out.replace(/\s*$/, '')
       if (out) out += '\n'
@@ -147,7 +161,10 @@ function formatStatement(sql: string): string {
       continue
     }
     if (up === '(') {
-      out = out.replace(/\s*$/, '') + (prev ? ' ' : '') + '('
+      /* 函数调用粘合（COUNT(*)）：仅裸词视为函数名（反引号标识符 `t`( 保留空格），
+         关键字后与表位置（INSERT INTO t (…)）保留空格 */
+      const funcCall = !tablePos && prev !== '' && /[\w$]$/.test(prev) && !SPACE_BEFORE_PAREN.has(prev.toUpperCase())
+      out = out.replace(/\s*$/, '') + (prev !== '' && !funcCall ? ' ' : '') + '('
       depth++
       prev = up
       continue
@@ -159,15 +176,32 @@ function formatStatement(sql: string): string {
       continue
     }
     if (up === ',') {
-      // VALUES 行内不换行；其余逗号换行缩进
-      if (prev === 'VALUES' || depth === 0) out += ', '
+      // VALUES 行内不换行；其余逗号换行缩进（行尾不带空格，由下一个 token 自带前导空格，避免双空格）
+      if (prev === 'VALUES' || depth === 0) out += ','
       else out += ',\n' + '  '.repeat(depth)
       prev = up
       continue
     }
+    /* 标识符限定符 `.`：与前后库名/表名粘合，美化后不留空格。
+       两类形态：独立的 `.`（`db2` . `sales`）与点在词首的 `.sales`（`db2`.sales）；
+       `.5` 这类数字 token 不算限定符 */
+    if (up === '.') {
+      out = out.replace(/\s*$/, '') + '.'
+      prev = up
+      glueNext = true
+      continue
+    }
+    if (tk.startsWith('.') && !/^\.\d/.test(tk)) {
+      out = out.replace(/\s*$/, '') + tk
+      prev = up
+      glueNext = tk.endsWith('.')
+      continue
+    }
     const upper = MAJOR_KEYWORDS.has(up) ? up : tk
     if (prev === '' || prev === '(' || out.endsWith('\n')) out += upper
+    else if (glueNext) out += upper
     else out += ' ' + upper
+    glueNext = tk.length > 1 && tk.endsWith('.')
     prev = up
   }
   return out
